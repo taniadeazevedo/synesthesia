@@ -1,10 +1,19 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Upload, Play, Pause, RefreshCw, Download } from "lucide-react";
 
 // ============================================================================
-// 1) UTILIDADES (Color)
+// 0) HELPERS
 // ============================================================================
 
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
 function rgbToHex(r, g, b) {
   return `#${[r, g, b]
     .map((x) => {
@@ -13,6 +22,33 @@ function rgbToHex(r, g, b) {
     })
     .join("")}`;
 }
+function hexToRgb01(hex) {
+  const h = (hex || "#808080").replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return { r, g, b };
+}
+function rgbToHsv({ r, g, b }) {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  return { s, v };
+}
+function mean(arr) {
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+}
+function variance(arr) {
+  if (!arr.length) return 0;
+  const m = mean(arr);
+  return mean(arr.map((x) => (x - m) ** 2));
+}
+
+// ============================================================================
+// 1) COLOR EXTRACTION (KMEANS)
+// ============================================================================
 
 function kMeansClustering(pixels, k = 5, maxIterations = 10) {
   if (pixels.length === 0) return [];
@@ -28,9 +64,7 @@ function kMeansClustering(pixels, k = 5, maxIterations = 10) {
       let minDist = Infinity;
       let closest = 0;
       centroids.forEach((c, idx) => {
-        const dist = Math.sqrt(
-          (pixel.r - c.r) ** 2 + (pixel.g - c.g) ** 2 + (pixel.b - c.b) ** 2
-        );
+        const dist = Math.sqrt((pixel.r - c.r) ** 2 + (pixel.g - c.g) ** 2 + (pixel.b - c.b) ** 2);
         if (dist < minDist) {
           minDist = dist;
           closest = idx;
@@ -60,16 +94,19 @@ async function extractColors(imageFile) {
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
-        const maxSize = 300;
+
+        const maxSize = 320;
         const scale = Math.min(maxSize / img.width, maxSize / img.height);
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
+
+        canvas.width = Math.max(1, Math.floor(img.width * scale));
+        canvas.height = Math.max(1, Math.floor(img.height * scale));
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const pixels = [];
         const data = imageData.data;
 
+        // sampling stride: 8 pixels
         for (let i = 0; i < data.length; i += 4 * 8) {
           if (data[i + 3] > 128) pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
         }
@@ -84,333 +121,117 @@ async function extractColors(imageFile) {
 }
 
 // ============================================================================
-// 2) IA (Caption) + LÓGICA EDITORIAL PREMIUM
+// 2) METRICS FROM COLORS (THIS DRIVES TEXTURA + MÚSICA)
 // ============================================================================
 
+function deriveColorMetrics(colors = []) {
+  const cols = (colors.length ? colors : ["#808080"]).slice(0, 6);
+  const rgbs = cols.map(hexToRgb01);
+
+  const luminances = rgbs.map(({ r, g, b }) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
+  const warmnesses = rgbs.map(({ r, b }) => r - b); // warm >0, cold <0
+  const sats = rgbs.map((rgb) => rgbToHsv(rgb).s);
+
+  const lum = clamp(mean(luminances), 0, 1);
+  const warm = clamp(mean(warmnesses), -1, 1);
+  const sat = clamp(mean(sats), 0, 1);
+
+  const paletteVar = clamp(variance(luminances) + variance(sats), 0, 0.2);
+
+  // a simple "contrast" proxy
+  const lumMin = Math.min(...luminances);
+  const lumMax = Math.max(...luminances);
+  const contrast = clamp(lumMax - lumMin, 0, 1);
+
+  return { lum, warm, sat, paletteVar, contrast, colors: cols };
+}
+
+function deriveTextureFromMetrics(m) {
+  // Editorial / museum-ish vocabulary
+  if (m.sat < 0.22 && m.lum < 0.42) return "Velada";
+  if (m.sat < 0.22 && m.lum >= 0.42) return "Bruma";
+
+  if (m.warm > 0.12 && m.sat >= 0.35) return "Cálida";
+  if (m.warm < -0.1 && m.sat >= 0.35) return "Fría";
+
+  if (m.paletteVar > 0.06 && m.sat >= 0.3) return "Prismática";
+  if (m.paletteVar > 0.04) return "Textural";
+
+  if (m.lum > 0.62) return "Clara";
+  if (m.lum < 0.35) return "Nocturna";
+
+  return "Haze";
+}
+
+function deriveMoodFromMetrics(m) {
+  // simple, stable, feels intentional
+  if (m.lum < 0.36) return "nostálgica";
+  if (m.lum > 0.68 && m.sat > 0.22) return "luminosa";
+  if (m.sat < 0.22) return "suspendida";
+  if (m.warm > 0.1) return "íntima";
+  return "suspendida";
+}
+
 const POOLS_ATMOS = {
-  íntima: ["La distancia más corta entre dos pensamientos.", "Donde el ruido del mundo deja de existir."],
-  nostálgica: ["Un eco que se resiste a desaparecer.", "Lo que queda cuando el tiempo se detiene."],
-  suspendida: ["Un instante congelado en el aire.", "La quietud que precede al recuerdo."],
-  luminosa: ["La claridad que baña los momentos compartidos.", "Un rayo de sol atrapado en la memoria."],
+  íntima: ["Algo que vuelve sin avisar.", "Un sitio donde el mundo baja el volumen.", "Cerca, como si no hiciera falta decir nada."],
+  nostálgica: ["Un eco que se resiste a desaparecer.", "Lo que queda cuando el tiempo se detiene.", "Un brillo viejo en la esquina de la memoria."],
+  suspendida: ["Un instante congelado en el aire.", "La quietud que precede al recuerdo.", "Todo flota un segundo antes de caer."],
+  luminosa: ["La claridad que baña los momentos compartidos.", "Un rayo de sol atrapado en la memoria.", "La luz como una promesa pequeña."],
 };
 
-const MICRO_SUBJECT = {
-  persona: "Una presencia que habita el silencio.",
-  mascota: "Lealtad en una frecuencia pura.",
-  edificio: "Paredes que guardan el eco de lo vivido.",
-  naturaleza: "El pulso de lo que siempre ha estado ahí.",
-  objeto: "La importancia de lo pequeño.",
-  grupo: "La armonía de las voces que ya no suenan.",
-  arte: "Una ventana a una realidad inventada.",
-  otro: "Algo que vuelve sin avisar.",
-};
-
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
-}
-function scoreKeywords(text, words) {
-  let s = 0;
-  for (const w of words) if (text.includes(w)) s++;
-  return s;
+function deriveBpmFromMetrics(m) {
+  // Jon-Hopkins-ish: often 80–110 (but we keep it gentle)
+  // More contrast & sat -> slightly higher energy
+  const base = lerp(78, 102, clamp(m.sat * 0.55 + m.contrast * 0.45, 0, 1));
+  // darker -> slower
+  const darkPull = lerp(0, -10, clamp((0.55 - m.lum) / 0.55, 0, 1));
+  return Math.round(clamp(base + darkPull, 72, 110));
 }
 
-function detectSubject(lower) {
-  const PERSON = [
-    "person",
-    "people",
-    "man",
-    "woman",
-    "girl",
-    "boy",
-    "child",
-    "kid",
-    "face",
-    "portrait",
-    "selfie",
-    "hands",
-    "persona",
-    "gente",
-    "hombre",
-    "mujer",
-    "niña",
-    "niño",
-    "cara",
-    "rostro",
-    "retrato",
-    "selfi",
-    "manos",
-  ];
+function deriveMusicProfileFromMetrics(m) {
+  // This is the “language” layer that makes it feel like a piece (not a preset).
+  const bpm = deriveBpmFromMetrics(m);
 
-  const PET = [
-    "dog",
-    "puppy",
-    "cat",
-    "kitten",
-    "pet",
-    "hamster",
-    "rabbit",
-    "bunny",
-    "parrot",
-    "bird",
-    "horse",
-    "perro",
-    "cachorro",
-    "gato",
-    "gatito",
-    "mascota",
-    "conejo",
-    "pájaro",
-    "caballo",
-    // extras útiles (a veces BLIP usa estos)
-    "feline",
-    "tabby",
-    "kitty",
-  ];
+  const reverbSeconds = clamp(lerp(1.4, 3.6, clamp((1 - m.lum) * 0.65 + m.paletteVar * 0.9, 0, 1)), 1.2, 3.8);
 
-  const BUILDING = [
-    "building",
-    "house",
-    "apartment",
-    "skyscraper",
-    "tower",
-    "bridge",
-    "architecture",
-    "window",
-    "door",
-    "church",
-    "museum",
-    "city",
-    "street",
-    "edificio",
-    "casa",
-    "apartamento",
-    "rascacielos",
-    "torre",
-    "puente",
-    "arquitectura",
-    "ventana",
-    "puerta",
-    "iglesia",
-    "museo",
-    "ciudad",
-    "calle",
-  ];
+  // cutoff: bright + saturated -> more open
+  const cutoff = clamp(lerp(900, 4200, clamp(m.lum * 0.6 + m.sat * 0.5, 0, 1)), 650, 5200);
 
-  const NATURE = [
-    "forest",
-    "nature",
-    "tree",
-    "plants",
-    "mushroom",
-    "flowers",
-    "mountain",
-    "lake",
-    "river",
-    "sea",
-    "beach",
-    "sky",
-    "water",
-    "bosque",
-    "naturaleza",
-    "árbol",
-    "plantas",
-    "seta",
-    "flores",
-    "montaña",
-    "lago",
-    "río",
-    "mar",
-    "playa",
-    "cielo",
-    "agua",
-  ];
+  // detune spread: more palette variety -> richer chorus
+  const detuneSpread = clamp(lerp(7, 22, clamp(m.paletteVar / 0.08, 0, 1)), 6, 24);
 
-  const OBJECT = [
-    "book",
-    "cup",
-    "coffee",
-    "candle",
-    "chair",
-    "table",
-    "phone",
-    "camera",
-    "flower",
-    "food",
-    "plate",
-    "bottle",
-    "watch",
-    "libro",
-    "taza",
-    "café",
-    "vela",
-    "silla",
-    "mesa",
-    "teléfono",
-    "cámara",
-    "comida",
-    "plato",
-    "botella",
-    "reloj",
-  ];
+  // noise: more sat/contrast -> more “grain”
+  const noiseLevel = clamp(lerp(0.006, 0.02, clamp(m.sat * 0.55 + m.contrast * 0.45, 0, 1)), 0.004, 0.03);
 
-  const GROUP = [
-    "group",
-    "crowd",
-    "people",
-    "friends",
-    "party",
-    "concert",
-    "audience",
-    "bunch",
-    "equipo",
-    "grupo",
-    "amigos",
-    "fiesta",
-    "concierto",
-    "público",
-  ];
+  // sidechain depth: more energy -> more “breathing”
+  const sidechainDepth = clamp(lerp(0.03, 0.11, clamp(m.sat * 0.6 + m.contrast * 0.4, 0, 1)), 0.02, 0.14);
 
-  const ART = [
-    "painting",
-    "drawing",
-    "illustration",
-    "art",
-    "poster",
-    "sculpture",
-    "gallery",
-    "mural",
-    "pintura",
-    "dibujo",
-    "ilustración",
-    "arte",
-    "cartel",
-    "escultura",
-    "galería",
-  ];
+  // delay feedback & send: more paletteVar -> more space
+  const delayFeedback = clamp(lerp(0.18, 0.34, clamp(m.paletteVar / 0.08, 0, 1)), 0.14, 0.38);
+  const delayMix = clamp(lerp(0.18, 0.34, clamp((1 - m.lum) * 0.6 + m.paletteVar * 0.6, 0, 1)), 0.14, 0.42);
 
-  const scores = [
-    { k: "persona", s: scoreKeywords(lower, PERSON) },
-    { k: "mascota", s: scoreKeywords(lower, PET) },
-    { k: "edificio", s: scoreKeywords(lower, BUILDING) },
-    { k: "naturaleza", s: scoreKeywords(lower, NATURE) },
-    { k: "objeto", s: scoreKeywords(lower, OBJECT) },
-    { k: "grupo", s: scoreKeywords(lower, GROUP) },
-    { k: "arte", s: scoreKeywords(lower, ART) },
-  ];
-
-  scores.sort((a, b) => b.s - a.s);
-  const top = scores[0];
-  if (!top || top.s === 0) return { subject: "otro" };
-  return { subject: top.k };
-}
-
-function detectContext(lower) {
-  const NIGHT = ["night", "dark", "neon", "rain", "street", "noche", "oscuro", "neón", "lluvia"];
-  const INDOOR = ["room", "bed", "window", "table", "chair", "habitación", "cama", "ventana", "mesa", "silla"];
-  const OUTDOOR = [
-    "outdoor",
-    "forest",
-    "street",
-    "park",
-    "beach",
-    "mountain",
-    "exterior",
-    "bosque",
-    "calle",
-    "parque",
-    "playa",
-    "montaña",
-  ];
-
-  const night = scoreKeywords(lower, NIGHT) > 0;
-  const indoor = scoreKeywords(lower, INDOOR) > scoreKeywords(lower, OUTDOOR);
-
-  return { night, indoor };
-}
-
-function colorCharacter(hexColors = []) {
-  const c = hexColors[0] || "#808080";
-  const r = parseInt(c.slice(1, 3), 16) / 255;
-  const g = parseInt(c.slice(3, 5), 16) / 255;
-  const b = parseInt(c.slice(5, 7), 16) / 255;
-
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const warmth = r - b; // >0 cálido, <0 frío
-  return { luminance, warmth };
-}
-
-function deriveProfile({ subject, night, indoor, colors }) {
-  let mood = "suspendida";
-  if (subject === "persona" || subject === "objeto" || subject === "mascota") mood = "íntima";
-  if (subject === "edificio") mood = night ? "nostálgica" : "suspendida";
-  if (subject === "naturaleza") mood = night ? "suspendida" : "luminosa";
-  if (subject === "grupo") mood = "nostálgica";
-  if (subject === "arte") mood = "suspendida";
-
-  const { luminance, warmth } = colorCharacter(colors);
-
-  if (mood === "íntima" && night) mood = "nostálgica";
-  if (mood === "suspendida" && luminance > 0.62 && !night) mood = "luminosa";
-  if (mood === "luminosa" && indoor && luminance < 0.45) mood = "íntima";
-
-  const bpmRanges = {
-    íntima: [68, 76],
-    nostálgica: [82, 96],
-    suspendida: [74, 84],
-    luminosa: [70, 80],
-  };
-  const [minB, maxB] = bpmRanges[mood] || [72, 80];
-  const bpm = Math.round(minB + Math.random() * (maxB - minB));
-
-  const textures = {
-    íntima: ["Cálida", "Doméstica", "Suave", "Cercana"],
-    nostálgica: ["Nocturna", "Urbana", "Velada", "Lenta"],
-    suspendida: ["Bruma", "Haze", "Drift", "Velada"],
-    luminosa: ["Orgánica", "Clara", "Aire", "Solar"],
-  };
-  const texture = pick(textures[mood] || ["Ambient"]);
-
-  const atmosphere = pick(POOLS_ATMOS[mood] || POOLS_ATMOS.suspendida);
-  const micro = MICRO_SUBJECT[subject] || MICRO_SUBJECT.otro;
-
-  const isClose = subject === "objeto" || subject === "persona" || subject === "mascota";
-  const isWide = subject === "naturaleza" || subject === "edificio";
-  const isGroup = subject === "grupo";
-
-  let reverbSeconds = isClose ? 1.2 : isWide ? 3.2 : 2.2;
-  let lfoDepth = isWide ? 0.06 : 0.03;
-  let detuneSpread = isGroup ? 18 : isClose ? 6 : 10;
-
-  const baseCutoff = night ? 1200 : 2200;
-  let cutoff = baseCutoff + warmth * -800 + (luminance - 0.5) * 600;
-  cutoff = clamp(cutoff, 650, 3800);
-
-  if (isClose) cutoff = clamp(cutoff, 600, 2400);
-  if (isWide) cutoff = clamp(cutoff, 900, 3600);
+  // evolving macro motion (A/B sections)
+  const evolveAmount = clamp(lerp(0.25, 0.9, clamp(m.paletteVar / 0.08, 0, 1)), 0.2, 1);
 
   return {
-    mood,
     bpm,
-    texture,
-    atmosphere,
-    micro,
-    music: {
-      reverbSeconds,
-      cutoff,
-      lfoDepth,
-      detuneSpread,
-      night,
-      isClose,
-      isWide,
-      isGroup,
-    },
+    reverbSeconds,
+    cutoff,
+    detuneSpread,
+    noiseLevel,
+    sidechainDepth,
+    delayFeedback,
+    delayMix,
+    evolveAmount,
   };
 }
 
-async function analyzeImageWithFreeAI(imageFile, colors) {
+// ============================================================================
+// 3) OPTIONAL IA CAPTION (ONLY FOR “EXTRA FLAVOUR”, NOT REQUIRED)
+//    If HF fails, we still look “designed” because metrics drive everything.
+// ============================================================================
+
+async function analyzeImageWithFreeAI(imageFile) {
   try {
     const reader = new FileReader();
     const base64 = await new Promise((resolve) => {
@@ -418,62 +239,38 @@ async function analyzeImageWithFreeAI(imageFile, colors) {
       reader.readAsDataURL(imageFile);
     });
 
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs: base64.split(",")[1] }),
-      }
-    );
+    const response = await fetch("https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Optional token (recommended if you have it)
+        // "Authorization": `Bearer ${import.meta.env.VITE_HF_TOKEN}`,
+      },
+      body: JSON.stringify({ inputs: String(base64).split(",")[1] }),
+    });
+
+    if (!response.ok) {
+      const txt = await response.text().catch(() => "");
+      console.warn("HF error:", response.status, txt);
+      return { caption: null };
+    }
 
     const result = await response.json();
-    const desc = result[0]?.generated_text || "photo";
-    const lower = desc.toLowerCase();
-
-    const { subject } = detectSubject(lower);
-    const { night, indoor } = detectContext(lower);
-
-    const profile = deriveProfile({ subject, night, indoor, colors });
-
-    return {
-      caption: desc,
-      subject,
-      mood: profile.mood,
-      bpm: profile.bpm,
-      genre: profile.texture,
-      atmosphere: profile.atmosphere,
-      micro: profile.micro,
-      music: profile.music,
-    };
+    const desc = result?.[0]?.generated_text;
+    return { caption: desc || null };
   } catch (e) {
-    return {
-      caption: "photo",
-      subject: "otro",
-      mood: "íntima",
-      bpm: 72,
-      genre: "Cálida",
-      atmosphere: pick(POOLS_ATMOS["íntima"]),
-      micro: MICRO_SUBJECT.otro,
-      music: { reverbSeconds: 1.6, cutoff: 1800, lfoDepth: 0.03, detuneSpread: 8, night: false },
-    };
+    console.warn("HF exception:", e);
+    return { caption: null };
   }
 }
 
 // ============================================================================
-// 3) AUDIO (con perfil musical)
+// 4) AUDIO — ELECTRÓNICA AMBIENT + (sidechain fake + grain + A/B evolution)
 // ============================================================================
 
-async function generateAudio(colors, bpm, musicProfile) {
-  const duration = 60;
-  const sampleRate = 44100;
-  const ctx = new OfflineAudioContext(2, duration * sampleRate, sampleRate);
-
-  // Reverb
-  const convolver = ctx.createConvolver();
-  const impulseSeconds = clamp(musicProfile?.reverbSeconds ?? 2.2, 0.8, 3.8);
-  const impulse = ctx.createBuffer(2, Math.floor(sampleRate * impulseSeconds), sampleRate);
-
+function makeImpulse(ctx, seconds) {
+  const sampleRate = ctx.sampleRate;
+  const impulse = ctx.createBuffer(2, Math.floor(sampleRate * seconds), sampleRate);
   for (let c = 0; c < 2; c++) {
     const d = impulse.getChannelData(c);
     for (let i = 0; i < d.length; i++) {
@@ -481,62 +278,241 @@ async function generateAudio(colors, bpm, musicProfile) {
       d[i] = (Math.random() * 2 - 1) * t * t;
     }
   }
-  convolver.buffer = impulse;
+  return impulse;
+}
 
-  const filter = ctx.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = clamp(musicProfile?.cutoff ?? 2200, 650, 3800);
-  filter.Q.value = 0.6;
+function makeNoiseBuffer(ctx, seconds = 2.0) {
+  const sampleRate = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, Math.floor(sampleRate * seconds), sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  return buffer;
+}
 
-  const out = ctx.createGain();
-  out.gain.value = 0.95;
+async function generateAudio(colors, metrics) {
+  const duration = 60;
+  const sampleRate = 44100;
+  const ctx = new OfflineAudioContext(2, duration * sampleRate, sampleRate);
 
-  filter.connect(convolver);
-  convolver.connect(out);
-  out.connect(ctx.destination);
+  const m = deriveMusicProfileFromMetrics(metrics);
+  const bpm = m.bpm;
+  const beat = 60 / bpm;
 
-  // Base freq (color)
-  const dominant = colors?.[0] || "#808080";
-  const r = parseInt(dominant.slice(1, 3), 16) / 255;
-  const baseFreq = 100 + r * 260;
-  const detuneSpread = clamp(musicProfile?.detuneSpread ?? 8, 4, 22);
+  // Master
+  const master = ctx.createGain();
+  master.gain.value = 0.92;
+  master.connect(ctx.destination);
 
-  // LFO (volumen) sutil
-  const lfo = ctx.createOscillator();
-  lfo.type = "sine";
-  lfo.frequency.value = 0.06;
-  const lfoGain = ctx.createGain();
-  lfoGain.gain.value = clamp(musicProfile?.lfoDepth ?? 0.03, 0.015, 0.09);
-  lfo.connect(lfoGain);
-  lfoGain.connect(out.gain);
-  lfo.start(0);
+  // Soft glue
+  const masterLP = ctx.createBiquadFilter();
+  masterLP.type = "lowpass";
+  masterLP.frequency.value = 18000;
+  masterLP.Q.value = 0.3;
+  masterLP.connect(master);
 
-  const ratios = [1, 1.5, 2];
-  ratios.forEach((m, idx) => {
+  // Bus filter
+  const busFilter = ctx.createBiquadFilter();
+  busFilter.type = "lowpass";
+  busFilter.frequency.value = clamp(m.cutoff, 650, 5200);
+  busFilter.Q.value = 0.75;
+  busFilter.connect(masterLP);
+
+  // Reverb
+  const convolver = ctx.createConvolver();
+  convolver.buffer = makeImpulse(ctx, clamp(m.reverbSeconds, 1.2, 3.8));
+  const revSend = ctx.createGain();
+  revSend.gain.value = 0.34;
+  revSend.connect(convolver);
+  convolver.connect(masterLP);
+
+  // Delay
+  const delay = ctx.createDelay(1.0);
+  delay.delayTime.value = clamp(beat * 0.5, 0.18, 0.42);
+  const fb = ctx.createGain();
+  fb.gain.value = clamp(m.delayFeedback, 0.12, 0.38);
+  delay.connect(fb);
+  fb.connect(delay);
+
+  const delaySend = ctx.createGain();
+  delaySend.gain.value = clamp(m.delayMix, 0.12, 0.42);
+  delaySend.connect(delay);
+  delay.connect(masterLP);
+
+  // Sidechain “fake” (very gentle breathing)
+  const sidechain = ctx.createGain();
+  sidechain.gain.value = 1.0;
+  sidechain.connect(busFilter);
+
+  // --- color → base pitch
+  const dominant = metrics.colors?.[0] || colors?.[0] || "#808080";
+  const { r, g, b } = hexToRgb01(dominant);
+
+  // Keep it musical-ish
+  const baseFreq = 78 + r * 190; // ~78..268
+  const detuneSpread = clamp(m.detuneSpread, 6, 24);
+
+  // PAD LAYER
+  const padOut = ctx.createGain();
+  padOut.gain.setValueAtTime(0.0, 0);
+  padOut.gain.linearRampToValueAtTime(0.22, 6);
+  padOut.connect(sidechain);
+  padOut.connect(revSend);
+  padOut.connect(delaySend);
+
+  const padFilter = ctx.createBiquadFilter();
+  padFilter.type = "lowpass";
+  padFilter.frequency.value = clamp(m.cutoff * 0.9, 650, 5200);
+  padFilter.Q.value = 0.7;
+  padFilter.connect(padOut);
+
+  // gentle phasing feel
+  const padLfo = ctx.createOscillator();
+  padLfo.type = "sine";
+  padLfo.frequency.value = 0.06;
+  const padLfoGain = ctx.createGain();
+  padLfoGain.gain.value = 140 + metrics.sat * 260;
+  padLfo.connect(padLfoGain);
+  padLfoGain.connect(padFilter.frequency);
+  padLfo.start(0);
+
+  const ratios = [1, 1.25, 1.5, 2, 2.5];
+  ratios.forEach((mult, idx) => {
     const osc = ctx.createOscillator();
-    osc.type = "sine";
+    osc.type = idx % 2 === 0 ? "sawtooth" : "triangle";
 
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, 0);
-    g.gain.linearRampToValueAtTime(0.085, 4);
+    const gNode = ctx.createGain();
+    gNode.gain.value = idx === 0 ? 0.16 : 0.09;
 
-    const spread = detuneSpread;
-    const det = (Math.random() * spread - spread / 2) + (idx - 1) * (spread * 0.35);
+    const det = (Math.random() * detuneSpread - detuneSpread / 2) + (idx - 2) * (detuneSpread * 0.18);
     osc.detune.value = det;
 
-    const drift = 1 + clamp((bpm - 76) / 320, -0.12, 0.12);
-    osc.frequency.value = baseFreq * m * drift;
+    const drift = 1 + (Math.random() - 0.5) * 0.01;
+    osc.frequency.value = baseFreq * mult * drift;
 
-    osc.connect(g);
-    g.connect(filter);
+    osc.connect(gNode);
+    gNode.connect(padFilter);
     osc.start(0);
+  });
+
+  // TEXTURAL NOISE (grainy, filtered, very low)
+  const noiseSrc = ctx.createBufferSource();
+  noiseSrc.buffer = makeNoiseBuffer(ctx, 3.0);
+  noiseSrc.loop = true;
+
+  const noiseHP = ctx.createBiquadFilter();
+  noiseHP.type = "highpass";
+  noiseHP.frequency.value = 1400 + g * 2600;
+
+  const noiseBP = ctx.createBiquadFilter();
+  noiseBP.type = "bandpass";
+  noiseBP.frequency.value = 900 + r * 2400;
+  noiseBP.Q.value = 0.9 + metrics.paletteVar * 8;
+
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.value = clamp(m.noiseLevel, 0.004, 0.03);
+
+  noiseSrc.connect(noiseHP);
+  noiseHP.connect(noiseBP);
+  noiseBP.connect(noiseGain);
+  noiseGain.connect(sidechain);
+  noiseGain.connect(revSend);
+
+  noiseSrc.start(0);
+
+  // PULSE: micro kick + hat (subtle)
+  const pulseBus = ctx.createGain();
+  pulseBus.gain.value = 0.18;
+  pulseBus.connect(sidechain);
+  pulseBus.connect(delaySend);
+
+  const kick = (t) => {
+    const o = ctx.createOscillator();
+    o.type = "sine";
+
+    const gk = ctx.createGain();
+    gk.gain.setValueAtTime(0.0001, t);
+    gk.gain.exponentialRampToValueAtTime(0.13, t + 0.005);
+    gk.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+
+    o.frequency.setValueAtTime(112 + b * 48, t);
+    o.frequency.exponentialRampToValueAtTime(48 + b * 18, t + 0.14);
+
+    o.connect(gk);
+    gk.connect(pulseBus);
+    o.start(t);
+    o.stop(t + 0.16);
+  };
+
+  const hat = (t) => {
+    const bufSize = Math.floor(sampleRate * 0.04);
+    const nbuf = ctx.createBuffer(1, bufSize, sampleRate);
+    const d = nbuf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+
+    const src = ctx.createBufferSource();
+    src.buffer = nbuf;
+
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 4500 + g * 1600;
+
+    const gn = ctx.createGain();
+    gn.gain.setValueAtTime(0.0001, t);
+    gn.gain.exponentialRampToValueAtTime(0.045, t + 0.003);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+
+    src.connect(hp);
+    hp.connect(gn);
+    gn.connect(pulseBus);
+    src.start(t);
+    src.stop(t + 0.05);
+  };
+
+  // FAKE SIDECHAIN: dip pad on each beat (breathing)
+  const scDepth = clamp(m.sidechainDepth, 0.02, 0.14);
+  const baseGain = 1.0;
+  for (let t = 0.6; t < duration - 0.2; t += beat) {
+    // kick & hat
+    kick(t);
+    hat(t + beat / 2);
+
+    // sidechain: fast dip + recover
+    sidechain.gain.setValueAtTime(baseGain, t - 0.001);
+    sidechain.gain.linearRampToValueAtTime(baseGain * (1 - scDepth), t + 0.02);
+    sidechain.gain.linearRampToValueAtTime(baseGain, t + 0.22);
+  }
+
+  // A/B EVOLUTION (every ~18s): open filter, change delay feedback, shift pad tone slightly
+  const evolve = clamp(m.evolveAmount, 0.2, 1);
+  const sec = [0, 18, 36, 54];
+  sec.forEach((start, idx) => {
+    const end = Math.min(duration, start + 18);
+
+    // filter open
+    const f0 = clamp(m.cutoff * (0.82 + 0.08 * idx), 650, 5200);
+    const f1 = clamp(m.cutoff * (0.95 + 0.12 * evolve), 650, 5200);
+    busFilter.frequency.setValueAtTime(f0, start);
+    busFilter.frequency.linearRampToValueAtTime(f1, Math.min(end, start + 12));
+
+    // delay feedback breathe
+    const fb0 = clamp(m.delayFeedback * (0.88 + 0.05 * idx), 0.12, 0.38);
+    const fb1 = clamp(m.delayFeedback * (1.0 + 0.15 * evolve), 0.12, 0.42);
+    fb.gain.setValueAtTime(fb0, start);
+    fb.gain.linearRampToValueAtTime(fb1, Math.min(end, start + 10));
+    fb.gain.linearRampToValueAtTime(fb0, Math.min(end, start + 18));
+
+    // noise band shifts a little (color feels alive)
+    const n0 = 800 + r * 2600 + idx * 120;
+    const n1 = 900 + r * 2400 + (idx % 2 ? 220 : -180) * evolve;
+    noiseBP.frequency.setValueAtTime(clamp(n0, 300, 6000), start);
+    noiseBP.frequency.linearRampToValueAtTime(clamp(n1, 300, 6000), Math.min(end, start + 12));
   });
 
   return await ctx.startRendering();
 }
 
 // ============================================================================
-// 4) EXPORT AUDIO: AudioBuffer -> WAV Blob
+// 5) EXPORT WAV
 // ============================================================================
 
 function audioBufferToWavBlob(audioBuffer) {
@@ -563,6 +539,7 @@ function audioBufferToWavBlob(audioBuffer) {
   view.setUint32(offset, 36 + dataSize, true);
   offset += 4;
   writeString("WAVE");
+
   writeString("fmt ");
   view.setUint32(offset, 16, true);
   offset += 4;
@@ -601,7 +578,7 @@ function audioBufferToWavBlob(audioBuffer) {
 }
 
 // ============================================================================
-// 5) SPLINE + EQ + PARTÍCULAS
+// 6) SPLINE + EQ + PARTICLES
 // ============================================================================
 
 function SplineBackground({ volume }) {
@@ -618,8 +595,8 @@ function SplineBackground({ volume }) {
     <div
       className="spline-viewport"
       style={{
-        filter: `brightness(${0.72 + volume * 0.35})`,
-        transform: `scale(${1 + volume * 0.03})`,
+        filter: `brightness(${0.74 + volume * 0.28})`,
+        transform: `scale(${1 + volume * 0.02})`,
       }}
     >
       <spline-viewer url="https://prod.spline.design/6wFT9lzZuaWY69mT/scene.splinecode" events-target="global" />
@@ -627,52 +604,92 @@ function SplineBackground({ volume }) {
   );
 }
 
-function FrequencyEqualizer({ analyser, isPlaying }) {
+function FrequencyEqualizer({ analyserRef, isPlaying }) {
   const canvasRef = useRef(null);
+  const rafRef = useRef(null);
 
   useEffect(() => {
-    if (!canvasRef.current || !analyser || !isPlaying) return;
-
     const canvas = canvasRef.current;
+    if (!canvas) return;
+
     const ctx = canvas.getContext("2d");
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
 
-    const draw = () => {
-      if (!isPlaying) return;
-      requestAnimationFrame(draw);
-
-      analyser.getByteFrequencyData(dataArray);
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.beginPath();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(245, 245, 220, 0.4)";
-
-      const sliceWidth = canvas.width / (bufferLength / 2);
-      let x = 0;
-
-      for (let i = 0; i < bufferLength; i++) {
-        const v = dataArray[i] / 255.0;
-        const y = (v * canvas.height) / 2;
-        const yy = canvas.height / 2 - y;
-
-        if (i === 0) ctx.moveTo(x, yy);
-        else ctx.lineTo(x, yy);
-
-        x += sliceWidth;
-        if (x > canvas.width) break;
-      }
-      ctx.stroke();
+    const resize = () => {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    draw();
-  }, [analyser, isPlaying]);
+    resize();
+    window.addEventListener("resize", resize);
+
+    const draw = () => {
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // baseline: keep it stable (lower), so when playing it doesn't “jump”
+      const baselineY = h * 0.72;
+
+      const analyser = analyserRef?.current;
+
+      // baseline line (always one line)
+      ctx.beginPath();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(251,248,238,0.14)";
+      ctx.moveTo(0, baselineY);
+      ctx.lineTo(w, baselineY);
+      ctx.stroke();
+
+      if (!isPlaying || !analyser) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteFrequencyData(dataArray);
+
+      // topographic line (above baseline)
+      ctx.beginPath();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(251,248,238,0.46)";
+      ctx.lineCap = "round";
+
+      const bins = Math.floor(bufferLength / 3);
+      const sliceWidth = w / bins;
+      let x = 0;
+
+      for (let i = 0; i < bins; i++) {
+        const v = dataArray[i] / 255; // 0..1
+        const y = baselineY - v * (h * 0.55); // draw upwards
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+
+        x += sliceWidth;
+      }
+
+      ctx.stroke();
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [analyserRef, isPlaying]);
 
   return (
     <div className="eq-wrapper">
       <span className="label-tiny">Pulso</span>
-      <canvas ref={canvasRef} width={300} height={60} className="eq-topo" />
+      <canvas ref={canvasRef} className="eq-topo" />
     </div>
   );
 }
@@ -701,8 +718,7 @@ function SubtleParticles({ colors = [], active, energy = 0 }) {
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: true });
-
-    const palette = (colors?.length ? colors : ["#F5F5DC"]).slice(0, 5);
+    const palette = (colors?.length ? colors : ["#FBF8EE"]).slice(0, 5);
 
     const resize = () => {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -713,7 +729,6 @@ function SubtleParticles({ colors = [], active, energy = 0 }) {
       canvas.height = Math.max(1, Math.floor(rect.height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Si no había partículas, init; si las hay, mantenemos pero re-encuadramos suavemente.
       if (particlesRef.current.length === 0) {
         const count = 18;
         particlesRef.current = Array.from({ length: count }).map(() => ({
@@ -724,7 +739,7 @@ function SubtleParticles({ colors = [], active, energy = 0 }) {
           vy: (Math.random() - 0.5) * 0.18,
           a: 0.06 + Math.random() * 0.10,
           c: palette[Math.floor(Math.random() * palette.length)],
-          drift: 0.6 + Math.random() * 0.9, // cada una reacciona distinto
+          drift: 0.6 + Math.random() * 0.9,
         }));
       }
     };
@@ -736,7 +751,6 @@ function SubtleParticles({ colors = [], active, energy = 0 }) {
       const { w, h } = rectRef.current;
       const e = clamp(energyRef.current, 0, 1);
 
-      // “premium”: el volumen añade un pelín de vida (sin convertirse en discoteca)
       const speedBoost = 1 + e * 0.35;
       const alphaBoost = 1 + e * 0.18;
 
@@ -758,7 +772,7 @@ function SubtleParticles({ colors = [], active, energy = 0 }) {
         ctx.fill();
       }
 
-      // velo ultra-sutil para “traza”
+      // super subtle “film”
       ctx.fillStyle = "rgba(0,0,0,0.02)";
       ctx.fillRect(0, 0, w, h);
 
@@ -778,26 +792,61 @@ function SubtleParticles({ colors = [], active, energy = 0 }) {
 }
 
 // ============================================================================
-// 6) APP
+// 7) LOADING PHRASES (random, no-repeat until exhausted)
+// ============================================================================
+
+const LOADING_PHRASES = [
+  "Afinando el silencio…",
+  "Dibujando una sombra sonora…",
+  "Abriendo una grieta en el aire…",
+  "Convirtiendo luz en pulso…",
+  "Escuchando lo que la imagen no dice…",
+  "Enhebrando un recuerdo…",
+  "Dejando que el color respire…",
+  "Buscando la frecuencia exacta…",
+];
+
+function useNonRepeatingPicker(items) {
+  const bagRef = useRef([]);
+  const pickOne = () => {
+    if (!bagRef.current.length) {
+      bagRef.current = [...items];
+    }
+    const idx = Math.floor(Math.random() * bagRef.current.length);
+    const v = bagRef.current[idx];
+    bagRef.current.splice(idx, 1);
+    return v;
+  };
+  return pickOne;
+}
+
+// ============================================================================
+// 8) APP
 // ============================================================================
 
 export default function Synesthesia() {
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
-  const [analysis, setAnalysis] = useState(null);
-  const [palette, setPalette] = useState([]);
 
+  const [palette, setPalette] = useState([]);
+  const [metrics, setMetrics] = useState(null);
+
+  const [analysis, setAnalysis] = useState(null);
   const [audioBuffer, setAudioBuffer] = useState(null);
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(0);
 
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
+  const [loadingLine, setLoadingLine] = useState(null);
 
   const audioContextRef = useRef(null);
   const sourceNodeRef = useRef(null);
   const analyserRef = useRef(null);
+
+  const pickLoading = useNonRepeatingPicker(LOADING_PHRASES);
 
   useEffect(() => {
     if (!toast) return;
@@ -828,49 +877,13 @@ export default function Synesthesia() {
     stopPlayback();
     setImageFile(null);
     setImageUrl(null);
+    setPalette([]);
+    setMetrics(null);
     setAnalysis(null);
     setAudioBuffer(null);
-    setPalette([]);
     setError(null);
     setVolume(0);
-  };
-
-  const onUpload = async (file) => {
-    setError(null);
-    setToast(null);
-
-    if (!file) return;
-
-    const okTypes = ["image/jpeg", "image/png", "image/webp"];
-    const maxBytes = 10 * 1024 * 1024;
-
-    if (!okTypes.includes(file.type)) {
-      setError("Formato no compatible. Usa JPG, PNG o WEBP.");
-      return;
-    }
-    if (file.size > maxBytes) {
-      setError("La imagen es demasiado grande. Elige una de hasta 10 MB.");
-      return;
-    }
-
-    setImageFile(file);
-    setImageUrl(URL.createObjectURL(file));
-    setIsGenerating(true);
-
-    try {
-      const { colors } = await extractColors(file);
-      setPalette(colors);
-
-      const res = await analyzeImageWithFreeAI(file, colors);
-      setAnalysis(res);
-
-      const buffer = await generateAudio(colors, res.bpm, res.music);
-      setAudioBuffer(buffer);
-    } catch (e) {
-      setError("No hemos podido generar el sonido. Prueba con otra imagen.");
-    } finally {
-      setIsGenerating(false);
-    }
+    setLoadingLine(null);
   };
 
   const toggleAudio = () => {
@@ -912,20 +925,80 @@ export default function Synesthesia() {
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
 
+  const onUpload = async (file) => {
+    setError(null);
+    setToast(null);
+
+    if (!file) return;
+
+    const okTypes = ["image/jpeg", "image/png", "image/webp"];
+    const maxBytes = 10 * 1024 * 1024;
+
+    if (!okTypes.includes(file.type)) {
+      setError("Formato no compatible. Usa JPG, PNG o WEBP.");
+      return;
+    }
+    if (file.size > maxBytes) {
+      setError("La imagen es demasiado grande. Elige una de hasta 10 MB.");
+      return;
+    }
+
+    stopPlayback();
+
+    setImageFile(file);
+    setImageUrl(URL.createObjectURL(file));
+    setIsGenerating(true);
+    setAudioBuffer(null);
+    setAnalysis(null);
+
+    // random loading phrase (no-repeat)
+    setLoadingLine(pickLoading());
+
+    try {
+      const { colors } = await extractColors(file);
+      const m = deriveColorMetrics(colors);
+      const mood = deriveMoodFromMetrics(m);
+      const textura = deriveTextureFromMetrics(m);
+      const bpm = deriveBpmFromMetrics(m);
+      const atmosphere = pick(POOLS_ATMOS[mood] || POOLS_ATMOS.suspendida);
+
+      // Optional caption (no dependency)
+      const { caption } = await analyzeImageWithFreeAI(file);
+
+      const nextAnalysis = {
+        caption,
+        mood,
+        bpm,
+        genre: textura,
+        atmosphere,
+      };
+
+      setPalette(colors);
+      setMetrics(m);
+      setAnalysis(nextAnalysis);
+
+      const buffer = await generateAudio(colors, m);
+      setAudioBuffer(buffer);
+    } catch (e) {
+      console.warn(e);
+      setError("No hemos podido generar el sonido. Prueba con otra imagen.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const ariaMain = isPlaying ? "Pausar" : "Escuchar";
 
   return (
     <div className="app-canvas">
-    <SplineBackground volume={volume} />
-{imageFile && <div className="bg-dim" />}
-
+      <SplineBackground volume={volume} />
+      {imageFile && <div className="bg-dim" />}
 
       <div className="ui-overlay">
         {!imageFile ? (
           <div className="hero-editorial">
             <h1 className="main-title">Synesthesia</h1>
             <p className="tagline">DONDE UN RECUERDO ENCUENTRA SU SONIDO</p>
-
             <p className="subcopy">Sube una imagen y escucha qué sonido despierta.</p>
 
             <label className="upload-trigger" role="button" tabIndex={0}>
@@ -940,7 +1013,6 @@ export default function Synesthesia() {
             </label>
 
             <div className="upload-specs">JPG / PNG / WEBP · hasta 10 MB</div>
-
             {error && <div className="hero-error">{error}</div>}
           </div>
         ) : (
@@ -949,59 +1021,65 @@ export default function Synesthesia() {
               <div className="image-frame">
                 <SubtleParticles colors={palette} active={!isGenerating} energy={isPlaying ? volume : 0.08} />
                 <img src={imageUrl} alt="Recuerdo" />
-                {isGenerating && <div className="curtain">Componiendo paisajes…</div>}
+                {isGenerating && (
+                  <div className="curtain">
+                    <span>{loadingLine || "Afinando el silencio…"}</span>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="content-side">
-              <div className="content-inner">
-                {error && <div className="panel-error">{error}</div>}
+              {error && <div className="panel-error">{error}</div>}
 
-                {analysis && !isGenerating && (
-                  <div className="editorial-player">
-                    <span className="small-cap">Lo que resuena</span>
-                    <h2 className="mood-name">{analysis.mood}</h2>
+              {analysis && !isGenerating && (
+                <div className="editorial-player">
+                  <span className="small-cap">Lo que resuena</span>
+                  <h2 className="mood-name">{analysis.mood}</h2>
 
-                    <p className="quote">“{analysis.atmosphere}”</p>
-                    <p className="micro-line">{analysis.micro}</p>
+                  <p className="quote">“{analysis.atmosphere}”</p>
 
-                    <FrequencyEqualizer analyser={analyserRef.current} isPlaying={isPlaying} />
+                  <FrequencyEqualizer analyserRef={analyserRef} isPlaying={isPlaying} />
 
+                  {/* META ROW: Tempo · Textura(+paleta) · Botones */}
+                  <div className="meta-row">
                     <div className="details">
-                      <div>
+                      <div className="detail-item">
                         <span className="small-cap">Tempo</span>
                         <p>{analysis.bpm} BPM</p>
                       </div>
-                      <div>
+
+                      <div className="detail-item">
                         <span className="small-cap">Textura</span>
-                        <p>{analysis.genre}</p>
+
+                        <div className="texture-line">
+                          <p>{analysis.genre}</p>
+
+                          {palette?.length > 0 && (
+                            <div className="palette-dots" aria-label="Paleta">
+                              {palette.slice(0, 4).map((c) => (
+                                <span key={c} className="dot" style={{ background: c }} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    {palette?.length > 0 && (
-                      <div className="palette-dots" aria-label="Paleta">
-                        {palette.slice(0, 5).map((c) => (
-                          <span key={c} className="dot" style={{ background: c }} />
-                        ))}
-                      </div>
-                    )}
+                      <div className="meta-controls">
+                        <button
+                          className="main-btn"
+                          onClick={toggleAudio}
+                          aria-label={ariaMain}
+                          disabled={!audioBuffer || isGenerating}
+                          title={ariaMain}
+                        >
+                          {isPlaying ? (
+                            <Pause size={34} strokeWidth={1} />
+                          ) : (
+                            <Play size={34} strokeWidth={1} style={{ marginLeft: 4 }} />
+                          )}
+                        </button>
 
-                    <div className="player-controls">
-                      <button
-                        className="main-btn"
-                        onClick={toggleAudio}
-                        aria-label={ariaMain}
-                        disabled={!audioBuffer || isGenerating}
-                        title={ariaMain}
-                      >
-                        {isPlaying ? (
-                          <Pause size={32} strokeWidth={1} />
-                        ) : (
-                          <Play size={32} strokeWidth={1} style={{ marginLeft: 4 }} />
-                        )}
-                      </button>
-
-                      <div className="action-rail">
                         <button
                           className="ghost-btn"
                           onClick={handleDownload}
@@ -1009,21 +1087,26 @@ export default function Synesthesia() {
                           disabled={!audioBuffer || isGenerating}
                           title="Descargar"
                         >
-                          <Download size={22} strokeWidth={1} />
+                          <Download size={26} strokeWidth={1} />
                         </button>
 
-                        <button className="ghost-btn" onClick={resetAll} aria-label="Volver a empezar" title="Volver a empezar">
-                          <RefreshCw size={22} strokeWidth={1} />
+                        <button
+                          className="ghost-btn"
+                          onClick={resetAll}
+                          aria-label="Volver a empezar"
+                          title="Volver a empezar"
+                        >
+                          <RefreshCw size={26} strokeWidth={1} />
                         </button>
                       </div>
                     </div>
-
-                    {/* debug opcional:
-                    <div style={{opacity:0.35, fontSize:12, marginTop:18}}>caption: {analysis.caption}</div>
-                    */}
                   </div>
-                )}
-              </div>
+
+                  {/* (Optional debug — remove if you want)
+                  {analysis.caption && <div className="caption-debug">Caption: {analysis.caption}</div>}
+                  */}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1034,53 +1117,48 @@ export default function Synesthesia() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,300;1,500&family=Inter:wght@200;400;500&display=swap');
 
-        :root { --ivory: #F5F5DC; --pitch: #050505; --rose: #ff2d55; }
+        :root { --ivory: #FBF8EE; --pitch: #050505; --rose: #ff2d55; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         .app-canvas {
           background: var(--pitch);
           color: var(--ivory);
           width: 100vw;
-          height: 100vh;
-          overflow: hidden;
+          min-height: 100svh;
+          overflow-y: auto;
+          overflow-x: hidden;
           font-family: 'Inter', sans-serif;
+          position: relative;
         }
 
-        /* SPLINE (setas) */
+        .spline-viewport { z-index: 0; }
+        .bg-dim { z-index: 1; }
+        .ui-overlay { z-index: 10; }
+
         .spline-viewport {
           position: fixed;
           inset: 0;
-          z-index: 0;
           pointer-events: auto;
           transition: filter 0.35s ease, transform 0.35s ease;
           transform-origin: center;
         }
         spline-viewer { width: 100%; height: 100%; display: block; }
 
-        /* Capa de legibilidad sobre setas */
-        .bg-dim{
+        .bg-dim {
           position: fixed;
           inset: 0;
-          z-index: 1;
           pointer-events: none;
-          background:
-            radial-gradient(1200px 800px at 60% 45%, rgba(0,0,0,0.25), rgba(0,0,0,0.55)),
-            rgba(0,0,0,0.18);
+          background: radial-gradient(1200px 800px at 60% 45%, rgba(0,0,0,0.22), rgba(0,0,0,0.52)), rgba(0,0,0,0.16);
         }
 
         .ui-overlay {
           position: relative;
-          z-index: 10;
-          height: 100vh;
+          min-height: 100svh;
           pointer-events: none;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding:
-            max(18px, env(safe-area-inset-top))
-            max(18px, env(safe-area-inset-right))
-            max(20px, env(safe-area-inset-bottom))
-            max(18px, env(safe-area-inset-left));
+          padding: 60px 20px;
         }
         .ui-overlay > * { pointer-events: auto; }
 
@@ -1088,263 +1166,267 @@ export default function Synesthesia() {
         .hero-editorial { text-align: center; max-width: 720px; padding: 0 14px; }
         .main-title {
           font-family: 'Cormorant Garamond', serif;
-          font-size: clamp(4rem, 15vw, 10rem);
+          font-size: clamp(3.5rem, 12vw, 8rem);
           font-style: italic;
           font-weight: 300;
           letter-spacing: -0.05em;
           margin-bottom: 0.5rem;
-          text-shadow: 0 0 40px rgba(245,245,220,0.2);
         }
-        .tagline {
+        .tagline{
           letter-spacing: 0.36em;
           font-size: 0.65rem;
-          opacity: 0.5;
-          margin-bottom: 1.75rem;
+          opacity: 0.70;
+          margin-bottom: 1.3rem;
           text-transform: uppercase;
         }
-        .subcopy {
+        .subcopy{
           max-width: 520px;
-          margin: 0 auto 2.25rem;
+          margin: 0 auto 2rem;
           font-size: 0.95rem;
           line-height: 1.6;
-          opacity: 0.75;
+          opacity: 0.88;
         }
-
         .upload-trigger {
           display: inline-flex;
           align-items: center;
           gap: 1rem;
           padding: 1rem 2.5rem;
-          border: 1px solid rgba(245,245,220,0.2);
+          border: 1px solid rgba(251,248,238,0.24);
           cursor: pointer;
           text-transform: uppercase;
           font-size: 0.75rem;
           letter-spacing: 0.1em;
-          transition: 0.4s;
+          transition: 0.35s;
           user-select: none;
         }
         .upload-trigger:hover { background: var(--ivory); color: var(--pitch); }
-        .upload-specs {
+        .upload-specs{
           margin-top: 10px;
           font-size: 0.7rem;
           letter-spacing: 0.12em;
-          opacity: 0.45;
+          opacity: 0.60;
           text-transform: uppercase;
         }
-        .hero-error {
-          margin-top: 18px;
-          font-size: 0.85rem;
-          opacity: 0.75;
-        }
+        .hero-error{ margin-top: 18px; font-size: 0.85rem; opacity: 0.86; }
 
-        /* EXPERIENCE */
+        /* GRID */
         .experience-grid {
           display: grid;
           grid-template-columns: 1fr 450px;
           width: min(1100px, 92vw);
-          gap: clamp(2.2rem, 6vw, 6rem);
+          gap: clamp(2rem, 5vw, 5rem);
           align-items: center;
         }
 
         .image-frame {
           position: relative;
           width: 100%;
-          height: 60vh;
-          min-height: 360px;
+          height: 55vh;
+          min-height: 350px;
           box-shadow: 0 40px 100px rgba(0,0,0,0.9);
           overflow: hidden;
-          isolation: isolate; /* para blend de partículas */
+          isolation: isolate;
         }
-        .particles-canvas{
+
+        .particles-canvas {
           position: absolute;
           inset: 0;
           z-index: 0;
-          pointer-events: none;
           mix-blend-mode: screen;
           opacity: 0.55;
+          pointer-events: none;
         }
+
         .image-frame img {
           position: relative;
           z-index: 1;
           width: 100%;
           height: 100%;
           object-fit: cover;
-          filter: saturate(0.9);
         }
-        .curtain {
-          position: absolute;
-          inset: 0;
-          z-index: 2;
-          background: rgba(5,5,5,0.95);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: 'Cormorant Garamond', serif;
+
+        .curtain{
+          position:absolute; inset:0; z-index:2;
+          background: rgba(5,5,5,0.92);
+          display:flex; align-items:center; justify-content:center;
+          font-family:'Cormorant Garamond', serif;
           font-style: italic;
           font-size: 1.5rem;
-        }
-
-        .content-side { width: 100%; }
-        .content-inner { padding: 0 clamp(10px, 2vw, 18px); overflow: visible; }
-
-        .panel-error { margin-bottom: 18px; font-size: 0.9rem; opacity: 0.75; }
-
-        .editorial-player { padding-right: 2px; }
-        .mood-name {
-          font-family: 'Cormorant Garamond', serif;
-          font-size: clamp(3rem, 6vw, 4.5rem);
-          font-weight: 300;
-          font-style: italic;
-          line-height: 1;
-          margin: 1rem 0;
-        }
-
-        .quote {
-          font-family: 'Cormorant Garamond', serif;
-          font-size: 1.4rem;
-          font-style: italic;
-          opacity: 0.74;
-          border-left: 1px solid rgba(245,245,220,0.22);
-          padding-left: 20px;
-          margin-bottom: 0.65rem;
-        }
-        .micro-line {
-          font-family: 'Inter', sans-serif;
-          font-size: 0.9rem;
-          line-height: 1.6;
-          opacity: 0.62;
-          margin-left: 21px;
-          margin-bottom: 1.2rem;
+          letter-spacing: -0.01em;
         }
 
         .small-cap {
           font-size: 0.6rem;
           text-transform: uppercase;
           letter-spacing: 0.25em;
-          opacity: 0.4;
+          opacity: 0.62;
         }
 
-        .details { display: flex; gap: 3rem; margin-bottom: 1rem; }
+        .mood-name {
+          font-family: 'Cormorant Garamond', serif;
+          font-size: clamp(2.5rem, 5vw, 4rem);
+          font-style: italic;
+          line-height: 1;
+          margin: 0.5rem 0 1rem;
+        }
 
-        /* Mini paleta */
+        .quote {
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 1.3rem;
+          font-style: italic;
+          opacity: 0.92;
+          border-left: 1px solid rgba(251,248,238,0.30);
+          padding-left: 20px;
+          margin-bottom: 1.1rem;
+        }
+
+        /* EQ */
+        .eq-wrapper { margin: 1.1rem 0 1.35rem; }
+        .label-tiny {
+          display:block;
+          font-size:0.6rem;
+          text-transform:uppercase;
+          letter-spacing:0.22em;
+          opacity:0.44;
+          margin-bottom:10px;
+        }
+        .eq-topo{
+          width:100%;
+          height:54px;
+          border-bottom: 1px solid rgba(251,248,238,0.12);
+        }
+
+        /* META */
+        .meta-row{
+          display:flex;
+          align-items:flex-end;
+          justify-content:flex-start;
+        }
+
+        /* Tempo · Textura · Botones: same spacing rhythm */
+        .details{
+          display:flex;
+          align-items:flex-end;
+          gap: 3rem; /* baseline rhythm */
+          flex-wrap: wrap;
+          min-width: 0;
+        }
+
+        .detail-item{
+          min-width: max-content;
+        }
+
+        /* Textura line: text + dots inline */
+        .texture-line{
+          display:flex;
+          align-items:center;
+          gap: 3rem; /* SAME as Tempo/Textura gap */
+        }
+
         .palette-dots{
           display:flex;
           gap:10px;
           align-items:center;
-          margin: 0 0 1.5rem;
-          opacity: 0.9;
+          margin: 0;
+          padding: 0;
+          opacity: 0.95;
+          flex: 0 0 auto;
         }
         .dot{
           width: 10px;
           height: 10px;
           border-radius: 999px;
-          border: 1px solid rgba(245,245,220,0.18);
-          box-shadow: 0 0 18px rgba(245,245,220,0.10);
+          border: 1px solid rgba(251,248,238,0.18);
+          box-shadow: 0 0 18px rgba(251,248,238,0.10);
         }
 
-        /* EQ topo */
-        .eq-wrapper { margin: 1.25rem 0 2rem; opacity: 0.9; }
-        .label-tiny {
-          display: block;
-          font-size: 0.6rem;
-          text-transform: uppercase;
-          letter-spacing: 0.22em;
-          opacity: 0.35;
-          margin-bottom: 10px;
-        }
-        .eq-topo {
-          width: 100%;
-          height: 54px;
-          border-bottom: 1px solid rgba(245,245,220,0.08);
+        .meta-controls{
+          display:flex;
+          align-items:center;
+          gap: 1.2rem;
         }
 
-        /* CONTROLS */
-        .player-controls {
-          margin-top: 1.2rem;
-          display: flex;
-          align-items: center;
-          gap: clamp(1rem, 2.5vw, 1.6rem);
-          flex-wrap: wrap;
-        }
+        /* Buttons (keep the “good design” feel) */
         .main-btn {
-          width: clamp(66px, 10vw, 90px);
-          height: clamp(66px, 10vw, 90px);
+          width: 80px; height: 80px;
           border-radius: 999px;
           border: 1px solid var(--ivory);
           background: transparent;
           color: var(--ivory);
           cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: 0.4s;
-          flex: 0 0 auto;
+          display: flex; align-items: center; justify-content: center;
+          transition: 0.35s;
         }
-        .main-btn:hover {
-          background: var(--ivory);
-          color: var(--pitch);
-          transform: scale(1.03);
-          box-shadow: 0 0 40px var(--rose);
-        }
-        .main-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+        .main-btn:hover { background: var(--ivory); color: var(--pitch); transform: translateY(-1px); box-shadow: 0 0 40px rgba(255,45,85,0.45); }
+        .main-btn:disabled{ opacity:0.35; cursor:not-allowed; transform:none; box-shadow:none; }
 
-        .action-rail {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          padding-right: max(0px, env(safe-area-inset-right));
-        }
         .ghost-btn {
-          width: 58px;
-          height: 58px;
+          width: 68px; height: 68px;
           border-radius: 999px;
-          border: 1px solid rgba(245,245,220,0.14);
-          background: rgba(5,5,5,0.10);
+          border: 1px solid rgba(251,248,238,0.16);
+          background: rgba(5,5,5,0.18);
           color: var(--ivory);
           cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: 0.3s;
-          flex: 0 0 auto;
+          display: flex; align-items: center; justify-content: center;
           backdrop-filter: blur(6px);
+          transition: 0.25s;
         }
-        .ghost-btn:hover { border-color: rgba(245,245,220,0.45); }
-        .ghost-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .ghost-btn:hover{ border-color: rgba(251,248,238,0.45); transform: translateY(-1px); }
+        .ghost-btn:disabled{ opacity:0.35; cursor:not-allowed; transform:none; }
 
-        /* TOAST */
+        .panel-error{ margin-bottom: 18px; font-size: 0.9rem; opacity: 0.86; }
+
+        /* Responsive */
+        @media (max-width: 1000px) {
+          .experience-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+          .image-frame { height: 35vh; min-height: 250px; }
+          .ui-overlay { padding: 40px 15px; }
+          .mood-name { font-size: 3rem; }
+        }
+
+        @media (max-width: 500px) {
+          .main-title { font-size: 4rem; }
+
+          .experience-grid {
+            gap: 14px;
+            width: 94vw;
+            align-items: flex-start;
+          }
+
+          /* smaller image to reduce scroll */
+          .image-frame {
+            height: 24vh;
+            min-height: 170px;
+          }
+
+          .quote { font-size: 1.05rem; }
+
+          .details { gap: 2rem; }
+          .texture-line{ gap: 2rem; }
+
+          /* buttons stay left, wrap below if needed */
+          .meta-controls{
+            width: 100%;
+            justify-content: flex-start;
+            margin-top: 8px;
+          }
+
+          .main-btn { width: 80px; height: 80px; }
+          .ghost-btn { width: 68px; height: 68px; }
+        }
+
         .toast {
           position: fixed;
           left: 50%;
-          bottom: max(18px, env(safe-area-inset-bottom));
+          bottom: 30px;
           transform: translateX(-50%);
-          z-index: 50;
-          padding: 10px 14px;
-          border: 1px solid rgba(245,245,220,0.14);
-          background: rgba(5,5,5,0.6);
-          backdrop-filter: blur(10px);
-          font-size: 0.78rem;
-          letter-spacing: 0.08em;
+          background: rgba(0,0,0,0.8);
+          padding: 8px 16px;
+          font-size: 0.7rem;
           text-transform: uppercase;
-          opacity: 0.9;
-        }
-
-        @media (max-width: 1000px) {
-          .experience-grid { grid-template-columns: 1fr; }
-          .image-frame { height: 42vh; min-height: 260px; }
-          .details { gap: 2.2rem; }
-        }
-
-        @media (max-width: 540px) {
-          .quote { font-size: 1.22rem; }
-          .micro-line { font-size: 0.88rem; margin-left: 19px; }
-          .details { gap: 1.8rem; }
-          .ghost-btn { width: 56px; height: 56px; }
-          .content-inner { padding-bottom: 10px; }
-          .player-controls { margin-top: 1.6rem; }
-
-          /* Setas: encuadre agradable en móvil */
-          .spline-viewport { transform: scale(1.06); }
+          z-index: 100;
+          border: 1px solid rgba(251,248,238,0.14);
+          backdrop-filter: blur(10px);
         }
       `}</style>
     </div>
