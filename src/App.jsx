@@ -227,13 +227,31 @@ export default function App() {
     return mood ? pick(pools[mood]) : "";
   }, [mood]);
 
-  const handleUpload = async (file) => {
+const handleUpload = async (file) => {
     if (!file) return;
-    setImageUrl(URL.createObjectURL(file)); setStage("loading");
-    const { colors: c } = await extractColors(file);
-    const m = { ...deriveColorMetrics(c), colors: c };
-    const buffer = await generateMusic(m);
-    setColors(c); setMetrics(m); setAudioBuffer(buffer); setStage("experience");
+    try {
+      setStage("loading");
+      const url = URL.createObjectURL(file);
+      setImageUrl(url);
+      
+      // Esperamos a que extraiga los colores
+      const { colors: c } = await extractColors(file);
+      
+      // Calculamos las métricas
+      const m = { ...deriveColorMetrics(c), colors: c };
+      
+      // Generamos la música con las métricas calculadas
+      const buffer = await generateMusic(m);
+      
+      setColors(c); 
+      setMetrics(m); 
+      setAudioBuffer(buffer);
+      setStage("experience");
+    } catch (err) {
+      console.error("Error en carga:", err);
+      setStage("hero");
+      alert("No se pudo procesar la imagen. Intenta con otra.");
+    }
   };
 
   function deriveColorMetrics(colors) {
