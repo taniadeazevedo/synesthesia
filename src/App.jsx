@@ -1090,37 +1090,48 @@ export default function App() {
   }
 /* BOTÓN DE LA HOME: "Entrega una memoria" */
 .upload-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 1rem 2.5rem;
-  border: 1px solid rgba(251,248,238,0.24);
-  background: transparent;
-  color: var(--ivory);
-  cursor: pointer;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.15em;
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-  user-select: none;
-  border-radius: 4px; /* Un ligero redondeado para que no sea totalmente cuadrado */
-  margin-top: 1rem;
-  animation: fade-in-up 0.8s 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 1rem !important;
+  padding: 1rem 2.5rem !important;
+  border: 1px solid rgba(251,248,238,0.24) !important;
+  background: transparent !important;
+  color: #fbf8ee !important; /* Usamos el color directo por si falla la variable */
+  cursor: pointer !important;
+  text-transform: uppercase !important;
+  font-size: 0.75rem !important;
+  letter-spacing: 0.15em !important;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  user-select: none !important;
+  border-radius: 4px !important;
+  margin-top: 1rem !important;
+  pointer-events: auto !important; /* IMPORTANTE: para que deje hacer click */
+  text-decoration: none !important;
 }
 
 .upload-trigger:hover {
-  background: var(--ivory);
-  color: var(--pitch);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  border-color: var(--ivory);
+  background: #fbf8ee !important;
+  color: #050505 !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3) !important;
+  border-color: #fbf8ee !important;
+}
+
+.upload-specs {
+  margin-top: 15px !important;
+  font-size: 0.65rem !important;
+  letter-spacing: 0.12em !important;
+  opacity: 0.5 !important;
+  text-transform: uppercase !important;
+  text-align: center !important;
+  display: block !important;
 }
 
 /* El texto que aparece debajo del botón de la Home */
 .upload-specs {
-  margin-top: 15px;
-  font-size: 0.65rem;
+  margin-top: 20px;
+  font-size: 0.45rem;
   letter-spacing: 0.12em;
   opacity: 0.5;
   text-transform: uppercase;
