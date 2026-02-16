@@ -274,54 +274,61 @@ const atmo = useMemo(() => {
 
 const handleUpload = async (file) => {
   if (!file) return;
-  console.log("Archivo:", file.name);  // ← AGREGAR ESTA LÍNEA
+  
+  console.log("📁 Subiendo:", file.name, file.size / 1024 / 1024 + "MB");
+  
   try {
-      setStage("loading");
-      const url = URL.createObjectURL(file);
-      setImageUrl(url);
-      
-      // Esperamos a que extraiga los colores
-      const { colors: c } = await extractColors(file);
-      
-      // Calculamos las métricas
-      const m = { ...deriveColorMetrics(c), colors: c };
-      
-      // Generamos la música con las métricas calculadas
-      const buffer = await generateMusic(m);
-      
-      setColors(c); 
-      setMetrics(m); 
-      setAudioBuffer(buffer);
-      setStage("experience");
-    } catch (err) {
-      console.error("Error en carga:", err);
-      setStage("hero");
-      alert("No se pudo procesar la imagen. Intenta con otra.");
-    }
-  };
-
-  function deriveColorMetrics(colors) {
-    const rgbs = colors.map(hexToRgb01);
-    const luminances = rgbs.map(({ r, g, b }) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
-    const warmnesses = rgbs.map(({ r, b }) => r - b);
-    const sats = rgbs.map((rgb) => rgbToHsv(rgb).s);
-    return { lum: mean(luminances), sat: mean(sats), warm: mean(warmnesses), paletteVar: variance(luminances) };
+    setStage("loading");
+    
+    // 🔸 CREAR URL ANTES
+    const url = URL.createObjectURL(file);
+    setImageUrl(url);
+    
+    console.log("🎨 Extrayendo colores...");
+    
+    // 🔸 ESPERAR EXPLÍCITAMENTE LOS COLORES
+    const result = await extractColors(file);
+    const { colors: c } = result;
+    console.log("✅ Colores encontrados:", c);
+    
+    // 🔸 CALCULAR MÉTRICAS
+    const m = { ...deriveColorMetrics(c), colors: c };
+    console.log("📊 Métricas:", m);
+    
+    // 🔸 GENERAR MÚSICA
+    console.log("🎵 Generando música...");
+    const buffer = await generateMusic(m);
+    console.log("✅ Música generada");
+    
+    // 🔸 GUARDAR ESTADO
+    setColors(c);
+    setMetrics(m);
+    setAudioBuffer(buffer);
+    setStage("experience");
+    
+  } catch (err) {
+    console.error("❌ ERROR DETALLADO:", err);
+    setStage("hero");
+    alert("Error procesando imagen: " + err.message);
   }
+};
 
-  const togglePlay = () => {
-    if (!audioBuffer) return;
-    if (isPlaying) { sourceRef.current?.stop(); setIsPlaying(false); }
-    else {
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      sourceRef.current = audioContextRef.current.createBufferSource();
-      sourceRef.current.buffer = audioBuffer;
-      sourceRef.current.connect(analyserRef.current);
-      analyserRef.current.connect(audioContextRef.current.destination);
-      sourceRef.current.onended = () => setIsPlaying(false);
-      sourceRef.current.start(0); setIsPlaying(true);
-    }
+
+// 🔸 MOVER deriveColorMetrics FUERA del handleUpload
+function deriveColorMetrics(colors) {
+  const rgbs = colors.map(hexToRgb01);
+  const luminances = rgbs.map(({ r, g, b }) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
+  const warmnesses = rgbs.map(({ r, b }) => r - b);
+  const sats = rgbs.map((rgb) => rgbToHsv(rgb).s);
+  return { 
+    lum: mean(luminances), 
+    sat: mean(sats), 
+    warm: mean(warmnesses), 
+    paletteVar: variance(luminances),
+    contrast: Math.max(...luminances) - Math.min(...luminances)
   };
+}
+
 
 return (
   <div className="app">
