@@ -853,7 +853,7 @@ export default function App() {
     </div>
 
     <div className="panel">
-      <div className="small-cap">Textura</div>
+      <div className="small-cap">Esencia</div>
       <div className="mood-name">{mood}</div>
       <div className="quote">{atmo}</div>
 
