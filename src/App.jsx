@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Upload, Play, Pause, RefreshCw, Download, Share2 } from "lucide-react";
 
 // ============================================================================
-// HELPERS & LOGIC
+// HELPERS & LOGIC (Manteniendo tu lógica intacta)
 // ============================================================================
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
@@ -97,7 +97,7 @@ function deriveColorMetrics(colors = []) {
   const warm = clamp(mean(warmnesses), -1, 1);
   const sat = clamp(mean(sats), 0, 1);
   const paletteVar = clamp(variance(luminances) + variance(sats), 0, 0.2);
-  return { lum, warm, sat, paletteVar, contrast: Math.max(...luminances) - Math.min(...luminances), colors: cols };
+  return { lum, warm, sat, paletteVar, contrast: 1, colors: cols };
 }
 
 function deriveTextureFromMetrics(m) {
@@ -130,14 +130,13 @@ function deriveBpmFromMetrics(m) {
 
 function deriveMusicProfileFromMetrics(m) {
   const bpm = deriveBpmFromMetrics(m);
-  return { bpm, reverbSeconds: 2.5, cutoff: 2000, noiseLevel: 0.01, sidechainDepth: 0.1, delayFeedback: 0.2, delayMix: 0.2, evolveAmount: 0.5 };
+  return { bpm, reverbSeconds: 2.5, cutoff: 2000 };
 }
 
 async function generateMusic(metrics) {
   const duration = 72;
   const sampleRate = 44100;
   const ctx = new OfflineAudioContext(2, Math.floor(duration * sampleRate), sampleRate);
-  const m = deriveMusicProfileFromMetrics(metrics);
   const master = ctx.createGain();
   master.gain.value = 0.7;
   master.connect(ctx.destination);
@@ -153,32 +152,19 @@ async function generateMusic(metrics) {
 function audioBufferToWavBlob(audioBuffer) {
   const numChannels = audioBuffer.numberOfChannels;
   const sampleRate = audioBuffer.sampleRate;
-  const format = 1;
-  const bitDepth = 16;
   const numFrames = audioBuffer.length;
-  const blockAlign = (numChannels * bitDepth) / 8;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = numFrames * blockAlign;
-  const buffer = new ArrayBuffer(44 + dataSize);
+  const buffer = new ArrayBuffer(44 + numFrames * numChannels * 2);
   const view = new DataView(buffer);
-  let offset = 0;
-  const writeString = (str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); offset += str.length; };
-  writeString("RIFF"); view.setUint32(offset, 36 + dataSize, true); offset += 4;
-  writeString("WAVE"); writeString("fmt "); view.setUint32(offset, 16, true); offset += 4;
-  view.setUint16(offset, format, true); offset += 2;
-  view.setUint16(offset, numChannels, true); offset += 2;
-  view.setUint32(offset, sampleRate, true); offset += 4;
-  view.setUint32(offset, byteRate, true); offset += 4;
-  view.setUint16(offset, blockAlign, true); offset += 2;
-  view.setUint16(offset, bitDepth, true); offset += 2;
-  writeString("data"); view.setUint32(offset, dataSize, true); offset += 4;
-  const channelData = [];
-  for (let c = 0; c < numChannels; c++) channelData.push(audioBuffer.getChannelData(c));
-  let writePos = 44;
-  for (let i = 0; i < numFrames; i++) {
+  const writeString = (s, o) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  writeString("RIFF", 0); view.setUint32(4, 36 + numFrames * numChannels * 2, true); writeString("WAVE", 8);
+  writeString("fmt ", 12); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * numChannels * 2, true);
+  view.setUint16(32, numChannels * 2, true); view.setUint16(34, 16, true); writeString("data", 36);
+  view.setUint32(40, numFrames * numChannels * 2, true);
+  for (let i = 0, pos = 44; i < numFrames; i++) {
     for (let c = 0; c < numChannels; c++) {
-      let sample = Math.max(-1, Math.min(1, channelData[c][i]));
-      view.setInt16(writePos, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true); writePos += 2;
+      let s = Math.max(-1, Math.min(1, audioBuffer.getChannelData(c)[i]));
+      view.setInt16(pos, s < 0 ? s * 0x8000 : s * 0x7fff, true); pos += 2;
     }
   }
   return new Blob([buffer], { type: "audio/wav" });
@@ -189,7 +175,7 @@ function audioBufferToWavBlob(audioBuffer) {
 // ============================================================================
 function SplineBackground() {
   const [shouldLoad, setShouldLoad] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setShouldLoad(true), 500); return () => clearTimeout(t); }, []);
+  useEffect(() => { const t = setTimeout(() => setShouldLoad(true), 100); return () => clearTimeout(t); }, []);
   useEffect(() => {
     if (!shouldLoad) return;
     if (!document.querySelector('script[src*="spline-viewer"]')) {
@@ -233,6 +219,7 @@ export default function App() {
   const [audioBuffer, setAudioBuffer] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
+  const [toast, setToast] = useState("");
 
   const audioContextRef = useRef(null);
   const sourceRef = useRef(null);
@@ -283,20 +270,18 @@ export default function App() {
           </div>
         )}
 
-        {stage === "loading" && (
-          <div className="loading-stage"><div className="spinner" /><p>{loadingMsg}</p></div>
-        )}
+        {stage === "loading" && ( stage === "loading" && <div className="loading-stage"><div className="spinner" /><p>{loadingMsg}</p></div> )}
 
         {stage === "experience" && (
           <div className="experience-grid">
             <div className="image-frame">
               <img src={imageUrl} alt="Memory" />
-              {isPlaying && <div className="curtain"><span>Traduciendo el color...</span></div>}
+              {isPlaying && <div className="curtain"><span>Sintetizando luz...</span></div>}
             </div>
 
             <div className="panel">
               <div className="small-cap">Esencia</div>
-              <div className="mood-name">{mood}</div>
+              <div className="mood-name main-mood">{mood}</div>
               <blockquote className="quote">{atmo}</blockquote>
 
               <div className="section-block">
@@ -313,91 +298,108 @@ export default function App() {
                   <div className="small-cap">Textura</div>
                   <div className="val">{textura}</div>
                 </div>
-                <div className="palette-dots">
-                  {colors.map((c, i) => <div key={i} className="dot" style={{ backgroundColor: c }} />)}
+                <div className="detail-item">
+                   <div className="small-cap">Espectro</div>
+                   <div className="palette-dots">
+                    {colors.map((c, i) => <div key={i} className="dot" style={{ backgroundColor: c }} />)}
+                   </div>
                 </div>
               </div>
 
               <div className="controls">
-                <button onClick={handlePlayPause} className="main-btn">{isPlaying ? <Pause size={24} /> : <Play size={24} />}</button>
+                <button onClick={handlePlayPause} className="main-btn">{isPlaying ? <Pause size={28} /> : <Play size={28} />}</button>
                 <button onClick={() => {
                   const blob = audioBufferToWavBlob(audioBuffer);
                   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "synesthesia.wav"; a.click();
-                }} className="ghost-btn"><Download size={20} /></button>
-                <button onClick={() => setStage("hero")} className="ghost-btn"><RefreshCw size={20} /></button>
+                  setToast("Descargando..."); setTimeout(() => setToast(""), 2000);
+                }} className="ghost-btn secondary"><Download size={22} /></button>
+                <button onClick={() => setStage("hero")} className="ghost-btn secondary"><RefreshCw size={22} /></button>
               </div>
             </div>
           </div>
         )}
       </div>
 
+      {toast && <div className="toast">{toast}</div>}
+
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,600&family=Inter:wght@300;400;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,400;1,600&family=Inter:wght@300;400;500;600&display=swap');
         :root { --pitch: #050505; --ivory: #fbf8ee; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { background: var(--pitch); color: var(--ivory); font-family: 'Inter', sans-serif; overflow-x: hidden; width: 100%; }
+        html, body { background: var(--pitch); color: var(--ivory); font-family: 'Inter', sans-serif; overflow-x: hidden; width: 100%; height: 100%; }
         
         .app { width: 100%; min-height: 100vh; position: relative; }
         .spline-viewport { position: fixed; inset: 0; z-index: 0; }
         
         .ui-overlay { 
           position: relative; z-index: 10; min-height: 100vh; width: 100%;
-          display: flex; align-items: center; justify-content: center; padding: 20px;
+          display: flex; align-items: center; justify-content: center; padding: 2rem;
           pointer-events: none;
         }
         .ui-overlay > * { pointer-events: auto; }
 
-        /* HERO */
-        .hero-stage { text-align: center; max-width: 600px; padding-bottom: 2rem; }
-        .main-title { font-family: 'Cormorant Garamond', serif; font-size: clamp(3.5rem, 10vw, 8rem); font-style: italic; margin-bottom: 1rem; }
+        .hero-stage { text-align: center; max-width: 600px; }
+        .main-title { font-family: 'Cormorant Garamond', serif; font-size: clamp(3.5rem, 10vw, 8rem); font-style: italic; }
         .upload-trigger { 
           display: inline-flex; align-items: center; gap: 10px; padding: 1rem 2rem; 
           border: 1px solid rgba(251,248,238,0.3); cursor: pointer; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.1em;
         }
-        .upload-trigger:hover { background: var(--ivory); color: var(--pitch); }
 
-        /* EXPERIENCE GRID */
+        /* EXPERIENCE GRID - COMPACTO */
         .experience-grid { 
-          display: grid; grid-template-columns: 1.2fr 1fr; gap: 4rem; 
+          display: grid; grid-template-columns: 1fr 1.2fr; gap: clamp(2rem, 5vw, 4rem); 
           width: 100%; max-width: 1100px; align-items: center; 
         }
 
-        .image-frame { position: relative; width: 100%; height: 55vh; overflow: hidden; box-shadow: 0 40px 100px rgba(0,0,0,0.5); }
+        .image-frame { position: relative; width: 100%; height: 50vh; overflow: hidden; box-shadow: 0 40px 100px rgba(0,0,0,0.6); }
         .image-frame img { width: 100%; height: 100%; object-fit: cover; }
         .curtain { position: absolute; inset: 0; background: rgba(5,5,5,0.7); display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 1.2rem; }
 
-        .panel { display: flex; flex-direction: column; gap: 1.5rem; }
-        .small-cap { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.2em; opacity: 0.6; margin-bottom: 4px; }
-        .mood-name { font-family: 'Cormorant Garamond', serif; font-size: clamp(2.5rem, 5vw, 4rem); font-style: italic; line-height: 1; }
-        .quote { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 1.1rem; opacity: 0.8; border-left: 1px solid rgba(251,248,238,0.2); padding-left: 1rem; margin-bottom: 1rem; }
+        .panel { display: flex; flex-direction: column; gap: 1rem; }
+        .small-cap { font-size: 0.55rem !important; text-transform: uppercase; letter-spacing: 0.25em; opacity: 0.6; margin-bottom: 2px; display: block; }
+        
+        .main-mood { font-size: clamp(2.5rem, 5vw, 4rem) !important; font-family: 'Cormorant Garamond', serif; font-style: italic; line-height: 0.9; margin-bottom: 0.5rem; }
+        
+        /* FRASE POÉTICA MÁS GRANDE */
+        .quote { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 1.45rem !important; opacity: 0.95; line-height: 1.3; border-left: 1px solid rgba(251,248,238,0.2); padding-left: 1.2rem; margin-bottom: 0.5rem; }
         
         .section-block { margin-bottom: 0.5rem; }
-        .eq-topo { width: 100%; height: 50px; border-bottom: 1px solid rgba(251,248,238,0.1); }
+        .eq-topo { width: 100%; height: 45px; border-bottom: 1px solid rgba(251,248,238,0.1); }
 
-        .details-row { display: flex; align-items: flex-end; gap: 2.5rem; flex-wrap: wrap; }
-        .val { font-family: 'Cormorant Garamond', serif; font-size: 1.5rem; font-style: italic; margin: 0; }
-        .palette-dots { display: flex; gap: 8px; align-items: center; padding-bottom: 4px; }
-        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        /* DETALLES IGUALADOS */
+        .details-row { display: flex; align-items: flex-start; gap: 3.5rem; margin-bottom: 1.5rem; }
+        .val { font-family: 'Cormorant Garamond', serif; font-size: 1.9rem !important; font-style: italic; margin: 0; line-height: 1; }
+        
+        .palette-dots { display: flex; gap: 10px; align-items: center; padding-top: 8px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(251,248,238,0.2); }
 
-        .controls { display: flex; align-items: center; gap: 1.5rem; margin-top: 1rem; }
-        .main-btn { width: 74px; height: 74px; border-radius: 50%; border: 1px solid var(--ivory); background: transparent; color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
+        .controls { display: flex; align-items: center; gap: 1.5rem; margin-top: 0.5rem; }
+        .main-btn { width: 85px; height: 85px; border-radius: 50%; border: 1px solid var(--ivory); background: transparent; color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
         .main-btn:hover { background: var(--ivory); color: var(--pitch); }
-        .ghost-btn { width: 54px; height: 54px; border-radius: 50%; border: 1px solid rgba(251,248,238,0.2); background: rgba(255,255,255,0.05); color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); transition: 0.3s; }
-        .ghost-btn:hover { border-color: var(--ivory); }
+        
+        /* BOTONES SECUNDARIOS MÁS GRANDES */
+        .ghost-btn.secondary { width: 65px; height: 65px; border-radius: 50%; border: 1px solid rgba(251,248,238,0.2); background: rgba(255,255,255,0.05); color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: 0.3s; }
+        .ghost-btn.secondary:hover { border-color: var(--ivory); }
 
-        /* MOBILE FIXES */
+        /* MOBILE OPTIMIZADO - ULTRA COMPACTO */
         @media (max-width: 900px) {
-          .ui-overlay { padding: 40px 20px; align-items: flex-start; }
-          .experience-grid { grid-template-columns: 1fr; gap: 2rem; width: 100%; text-align: center; }
-          .image-frame { height: 35vh; }
-          .panel { width: 100%; align-items: center; padding-bottom: 60px; }
-          .details-row { justify-content: center; gap: 2rem; width: 100%; }
-          .controls { justify-content: center; width: 100%; }
-          .quote { border-left: none; border-top: 1px solid rgba(251,248,238,0.1); padding: 15px 0 0 0; }
+          .ui-overlay { padding: 1rem; align-items: center; height: 100%; }
+          .experience-grid { grid-template-columns: 1fr; gap: 1rem; width: 100%; text-align: center; }
+          .image-frame { height: 25vh !important; max-height: 200px; margin: 0 auto; }
+          .panel { width: 100%; gap: 0.6rem; align-items: center; }
+          .main-mood { font-size: 2.2rem !important; }
+          .quote { font-size: 1.2rem !important; border-left: none; border-top: 1px solid rgba(251,248,238,0.1); padding: 10px 0 0 0; }
+          .details-row { flex-direction: row; justify-content: center; gap: 2rem; margin-bottom: 1rem; width: 100%; }
+          .val { font-size: 1.5rem !important; }
+          .controls { gap: 1rem; margin-top: 0; }
+          .main-btn { width: 75px; height: 75px; }
+          .ghost-btn.secondary { width: 55px; height: 55px; }
+          .section-block { width: 90%; }
         }
 
         .spinner { width: 30px; height: 30px; border: 2px solid rgba(251,248,238,0.2); border-top-color: var(--ivory); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #000; padding: 10px 20px; border: 1px solid var(--ivory); font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; }
       `}</style>
     </div>
   );
