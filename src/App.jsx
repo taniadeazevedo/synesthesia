@@ -217,13 +217,16 @@ export default function App() {
   }, [metrics]);
 
   const bpm = useMemo(() => metrics ? Math.round(lerp(72, 105, metrics.sat)) : 0, [metrics]);
-  const atmo = useMemo(() => {
+const atmo = useMemo(() => {
     const pools = {
       íntima: ["Algo que vuelve sin avisar.", "Un sitio donde el mundo baja el volumen.", "Cerca, como si no hiciera falta decir nada."],
       nostálgica: ["Un eco que se resiste a desaparecer.", "Lo que queda cuando el tiempo se detiene.", "Un brillo viejo en la esquina de la memoria."],
       suspendida: ["Un instante congelado en el aire.", "La quietud que precede al recuerdo.", "Todo flota un segundo antes de caer."],
       luminosa: ["La claridad que baña los momentos compartidos.", "Un rayo de sol atrapado en la memoria.", "La luz como una promesa pequeña."],
     };
+    // Si no hay mood todavía, devolvemos un texto vacío o por defecto
+    return mood && pools[mood] ? pick(pools[mood]) : "Traduciendo esencia...";
+  }, [mood]);
     return mood ? pick(pools[mood]) : "";
   }, [mood]);
 
