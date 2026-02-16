@@ -61,37 +61,68 @@ async function extractColors(imageFile) {
 async function generateMusic(metrics) {
   const duration = 72, sampleRate = 44100;
   const ctx = new OfflineAudioContext(2, duration * sampleRate, sampleRate);
-  const bpm = Math.round(lerp(72, 105, metrics.sat));
+  
+  // 1. DINÁMICA DE TIEMPO SEGÚN MÉTRICAS
+  const bpm = Math.round(lerp(65, 115, metrics.sat));
   const beat = 60 / bpm;
+  const attackTime = lerp(8, 1.5, metrics.sat); // Más saturación = ataque más rápido
 
-  const master = ctx.createGain(); master.gain.value = 0.7;
+  // 2. BUS MAESTRO CON COLORACIÓN
+  const master = ctx.createGain();
+  master.gain.value = 0.8;
   const busFilter = ctx.createBiquadFilter();
-  busFilter.type = "lowpass"; busFilter.frequency.value = lerp(800, 3500, metrics.lum);
-  busFilter.connect(master); master.connect(ctx.destination);
+  busFilter.type = "lowpass";
+  // Imágenes oscuras = sonido sordo / Imágenes claras = sonido brillante
+  busFilter.frequency.value = lerp(400, 5000, metrics.lum);
+  busFilter.connect(master);
+  master.connect(ctx.destination);
 
-  // LFO para movimiento
-  const lfo = ctx.createOscillator(); const lfoG = ctx.createGain();
-  lfo.frequency.value = 0.1; lfoG.gain.value = 500;
-  lfo.connect(lfoG); lfoG.connect(busFilter.frequency); lfo.start(0);
+  // 3. SÍNTESIS DE PADS (ACORDES DINÁMICOS)
+  const padBus = ctx.createGain();
+  padBus.gain.setValueAtTime(0, 0);
+  padBus.gain.linearRampToValueAtTime(0.4, attackTime); 
+  padBus.connect(busFilter);
 
-  // Pad Synth
-  const freqBase = lerp(80, 160, metrics.lum);
-  [0, 4, 7, 11].forEach((semi) => {
-    const osc = ctx.createOscillator(); osc.type = "sawtooth";
-    osc.frequency.value = freqBase * Math.pow(2, semi/12);
-    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(0.08, 4);
-    osc.connect(g); g.connect(busFilter); osc.start(0); osc.stop(duration);
+  // Elegimos intervalos según la calidez (warm)
+  // Si es frío (azul/verde) usamos intervalos de cuarta/quinta (espacial)
+  // Si es cálido (rojo/naranja) usamos terceras (armonía clásica)
+  const intervals = metrics.warm > 0 ? [0, 4, 7, 11] : [0, 5, 7, 10];
+  const rootFreq = lerp(60, 150, metrics.lum); // Imágenes claras = tonos más agudos
+
+  intervals.forEach((interval, i) => {
+    const osc = ctx.createOscillator();
+    // Variamos el tipo de onda según la varianza de la paleta
+    osc.type = metrics.paletteVar > 0.05 ? "sawtooth" : "triangle";
+    osc.frequency.value = rootFreq * Math.pow(2, interval / 12);
+    
+    // Detune aleatorio basado en el contraste para dar textura "analógica"
+    osc.detune.value = (Math.random() - 0.5) * (metrics.contrast * 50);
+
+    const g = ctx.createGain();
+    g.gain.value = 0.1;
+    osc.connect(g);
+    g.connect(padBus);
+    osc.start(0);
+    osc.stop(duration);
   });
 
-  // Reverb
-  const irLen = sampleRate * 3; const irBuf = ctx.createBuffer(2, irLen, sampleRate);
-  for(let c=0; c<2; c++) {
-    const d = irBuf.getChannelData(c);
-    for(let i=0; i<irLen; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/irLen, 2);
-  }
-  const conv = ctx.createConvolver(); conv.buffer = irBuf;
-  const rg = ctx.createGain(); rg.gain.value = 0.3;
-  busFilter.connect(rg); rg.connect(conv); conv.connect(master);
+  // 4. GENERADOR DE "POLVO" SONORO (TEXTURA)
+  // Esto hace que cada imagen tenga un "ruido" único de fondo
+  const nBuf = ctx.createBuffer(1, sampleRate * 2, sampleRate);
+  const nData = nBuf.getChannelData(0);
+  for (let i = 0; i < nData.length; i++) nData[i] = (Math.random() * 2 - 1);
+  const noise = ctx.createBufferSource();
+  noise.buffer = nBuf;
+  noise.loop = true;
+  const nFilter = ctx.createBiquadFilter();
+  nFilter.type = "bandpass";
+  nFilter.frequency.value = lerp(1000, 8000, metrics.sat);
+  const ng = ctx.createGain();
+  ng.gain.value = lerp(0.005, 0.03, metrics.paletteVar * 5);
+  noise.connect(nFilter);
+  nFilter.connect(ng);
+  ng.connect(master);
+  noise.start(0);
 
   return await ctx.startRendering();
 }
