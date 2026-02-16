@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Upload, Play, Pause, RefreshCw, Download } from "lucide-react";
+import { Upload, Play, Pause, RefreshCw, Download, Share2 } from "lucide-react";
 
 // ============================================================================
 // 0) HELPERS
@@ -56,9 +56,7 @@ function kMeansClustering(pixels, k = 5, maxIterations = 10) {
   for (let i = 0; i < k; i++) centroids.push(pixels[Math.floor(Math.random() * pixels.length)]);
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
-    const clusters = Array(k)
-      .fill(null)
-      .map(() => []);
+    const clusters = Array(k).fill(null).map(() => []);
 
     pixels.forEach((pixel) => {
       let minDist = Infinity;
@@ -106,7 +104,6 @@ async function extractColors(imageFile) {
         const pixels = [];
         const data = imageData.data;
 
-        // sampling stride: 8 pixels
         for (let i = 0; i < data.length; i += 4 * 8) {
           if (data[i + 3] > 128) pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
         }
@@ -121,7 +118,7 @@ async function extractColors(imageFile) {
 }
 
 // ============================================================================
-// 2) METRICS FROM COLORS (THIS DRIVES TEXTURA + MÚSICA)
+// 2) METRICS FROM COLORS
 // ============================================================================
 
 function deriveColorMetrics(colors = []) {
@@ -129,7 +126,7 @@ function deriveColorMetrics(colors = []) {
   const rgbs = cols.map(hexToRgb01);
 
   const luminances = rgbs.map(({ r, g, b }) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
-  const warmnesses = rgbs.map(({ r, b }) => r - b); // warm >0, cold <0
+  const warmnesses = rgbs.map(({ r, b }) => r - b);
   const sats = rgbs.map((rgb) => rgbToHsv(rgb).s);
 
   const lum = clamp(mean(luminances), 0, 1);
@@ -138,7 +135,6 @@ function deriveColorMetrics(colors = []) {
 
   const paletteVar = clamp(variance(luminances) + variance(sats), 0, 0.2);
 
-  // a simple "contrast" proxy
   const lumMin = Math.min(...luminances);
   const lumMax = Math.max(...luminances);
   const contrast = clamp(lumMax - lumMin, 0, 1);
@@ -147,24 +143,18 @@ function deriveColorMetrics(colors = []) {
 }
 
 function deriveTextureFromMetrics(m) {
-  // Editorial / museum-ish vocabulary
   if (m.sat < 0.22 && m.lum < 0.42) return "Velada";
   if (m.sat < 0.22 && m.lum >= 0.42) return "Bruma";
-
   if (m.warm > 0.12 && m.sat >= 0.35) return "Cálida";
   if (m.warm < -0.1 && m.sat >= 0.35) return "Fría";
-
   if (m.paletteVar > 0.06 && m.sat >= 0.3) return "Prismática";
   if (m.paletteVar > 0.04) return "Textural";
-
   if (m.lum > 0.62) return "Clara";
   if (m.lum < 0.35) return "Nocturna";
-
   return "Haze";
 }
 
 function deriveMoodFromMetrics(m) {
-  // simple, stable, feels intentional
   if (m.lum < 0.36) return "nostálgica";
   if (m.lum > 0.68 && m.sat > 0.22) return "luminosa";
   if (m.sat < 0.22) return "suspendida";
@@ -180,37 +170,20 @@ const POOLS_ATMOS = {
 };
 
 function deriveBpmFromMetrics(m) {
-  // Jon-Hopkins-ish: often 80–110 (but we keep it gentle)
-  // More contrast & sat -> slightly higher energy
   const base = lerp(78, 102, clamp(m.sat * 0.55 + m.contrast * 0.45, 0, 1));
-  // darker -> slower
   const darkPull = lerp(0, -10, clamp((0.55 - m.lum) / 0.55, 0, 1));
   return Math.round(clamp(base + darkPull, 72, 110));
 }
 
 function deriveMusicProfileFromMetrics(m) {
-  // This is the “language” layer that makes it feel like a piece (not a preset).
   const bpm = deriveBpmFromMetrics(m);
-
   const reverbSeconds = clamp(lerp(1.4, 3.6, clamp((1 - m.lum) * 0.65 + m.paletteVar * 0.9, 0, 1)), 1.2, 3.8);
-
-  // cutoff: bright + saturated -> more open
   const cutoff = clamp(lerp(900, 4200, clamp(m.lum * 0.6 + m.sat * 0.5, 0, 1)), 650, 5200);
-
-  // detune spread: more palette variety -> richer chorus
   const detuneSpread = clamp(lerp(7, 22, clamp(m.paletteVar / 0.08, 0, 1)), 6, 24);
-
-  // noise: more sat/contrast -> more “grain”
   const noiseLevel = clamp(lerp(0.006, 0.02, clamp(m.sat * 0.55 + m.contrast * 0.45, 0, 1)), 0.004, 0.03);
-
-  // sidechain depth: more energy -> more “breathing”
   const sidechainDepth = clamp(lerp(0.03, 0.11, clamp(m.sat * 0.6 + m.contrast * 0.4, 0, 1)), 0.02, 0.14);
-
-  // delay feedback & send: more paletteVar -> more space
   const delayFeedback = clamp(lerp(0.18, 0.34, clamp(m.paletteVar / 0.08, 0, 1)), 0.14, 0.38);
   const delayMix = clamp(lerp(0.18, 0.34, clamp((1 - m.lum) * 0.6 + m.paletteVar * 0.6, 0, 1)), 0.14, 0.42);
-
-  // evolving macro motion (A/B sections)
   const evolveAmount = clamp(lerp(0.25, 0.9, clamp(m.paletteVar / 0.08, 0, 1)), 0.2, 1);
 
   return {
@@ -227,176 +200,110 @@ function deriveMusicProfileFromMetrics(m) {
 }
 
 // ============================================================================
-// 3) OPTIONAL IA CAPTION (ONLY FOR “EXTRA FLAVOUR”, NOT REQUIRED)
-//    If HF fails, we still look “designed” because metrics drive everything.
+// 3) AUDIO GENERATION (ENHANCED WITH LFO MODULATION)
 // ============================================================================
 
-async function analyzeImageWithFreeAI(imageFile) {
-  try {
-    const reader = new FileReader();
-    const base64 = await new Promise((resolve) => {
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(imageFile);
-    });
-
-    const response = await fetch("https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        // Optional token (recommended if you have it)
-        // "Authorization": `Bearer ${import.meta.env.VITE_HF_TOKEN}`,
-      },
-      body: JSON.stringify({ inputs: String(base64).split(",")[1] }),
-    });
-
-    if (!response.ok) {
-      const txt = await response.text().catch(() => "");
-      console.warn("HF error:", response.status, txt);
-      return { caption: null };
-    }
-
-    const result = await response.json();
-    const desc = result?.[0]?.generated_text;
-    return { caption: desc || null };
-  } catch (e) {
-    console.warn("HF exception:", e);
-    return { caption: null };
-  }
-}
-
-// ============================================================================
-// 4) AUDIO — ELECTRÓNICA AMBIENT + (sidechain fake + grain + A/B evolution)
-// ============================================================================
-
-function makeImpulse(ctx, seconds) {
-  const sampleRate = ctx.sampleRate;
-  const impulse = ctx.createBuffer(2, Math.floor(sampleRate * seconds), sampleRate);
-  for (let c = 0; c < 2; c++) {
-    const d = impulse.getChannelData(c);
-    for (let i = 0; i < d.length; i++) {
-      const t = 1 - i / d.length;
-      d[i] = (Math.random() * 2 - 1) * t * t;
-    }
-  }
-  return impulse;
-}
-
-function makeNoiseBuffer(ctx, seconds = 2.0) {
-  const sampleRate = ctx.sampleRate;
-  const buffer = ctx.createBuffer(1, Math.floor(sampleRate * seconds), sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-  return buffer;
-}
-
-async function generateAudio(colors, metrics) {
-  const duration = 60;
+async function generateMusic(metrics) {
+  const duration = 72;
   const sampleRate = 44100;
-  const ctx = new OfflineAudioContext(2, duration * sampleRate, sampleRate);
+  const ctx = new OfflineAudioContext(2, Math.floor(duration * sampleRate), sampleRate);
 
   const m = deriveMusicProfileFromMetrics(metrics);
-  const bpm = m.bpm;
-  const beat = 60 / bpm;
+  const beat = 60 / m.bpm;
 
-  // Master
+  const { r, g, b } = hexToRgb01(metrics.colors[0] || "#808080");
+
+  // MASTER + BUS FILTER
   const master = ctx.createGain();
-  master.gain.value = 0.92;
+  master.gain.value = 0.75;
   master.connect(ctx.destination);
 
-  // Soft glue
-  const masterLP = ctx.createBiquadFilter();
-  masterLP.type = "lowpass";
-  masterLP.frequency.value = 18000;
-  masterLP.Q.value = 0.3;
-  masterLP.connect(master);
-
-  // Bus filter
   const busFilter = ctx.createBiquadFilter();
   busFilter.type = "lowpass";
-  busFilter.frequency.value = clamp(m.cutoff, 650, 5200);
-  busFilter.Q.value = 0.75;
-  busFilter.connect(masterLP);
+  busFilter.frequency.value = m.cutoff;
+  busFilter.Q.value = 0.9;
+  busFilter.connect(master);
 
-  // Reverb
+  // REVERB
+  const reverbTime = m.reverbSeconds;
   const convolver = ctx.createConvolver();
-  convolver.buffer = makeImpulse(ctx, clamp(m.reverbSeconds, 1.2, 3.8));
-  const revSend = ctx.createGain();
-  revSend.gain.value = 0.34;
-  revSend.connect(convolver);
-  convolver.connect(masterLP);
+  const impLength = Math.floor(sampleRate * reverbTime);
+  const impulse = ctx.createBuffer(2, impLength, sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const data = impulse.getChannelData(c);
+    for (let i = 0; i < impLength; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / impLength, 1.8);
+    }
+  }
+  convolver.buffer = impulse;
 
-  // Delay
-  const delay = ctx.createDelay(1.0);
-  delay.delayTime.value = clamp(beat * 0.5, 0.18, 0.42);
+  const reverbSend = ctx.createGain();
+  reverbSend.gain.value = clamp(lerp(0.28, 0.52, clamp((1 - metrics.lum) * 0.7, 0, 1)), 0.22, 0.58);
+  reverbSend.connect(convolver);
+  convolver.connect(busFilter);
+
+  // DELAY
+  const delay = ctx.createDelay(3);
+  delay.delayTime.value = (beat * 1.5) % 2.5;
+
   const fb = ctx.createGain();
-  fb.gain.value = clamp(m.delayFeedback, 0.12, 0.38);
+  fb.gain.value = m.delayFeedback;
   delay.connect(fb);
   fb.connect(delay);
 
   const delaySend = ctx.createGain();
-  delaySend.gain.value = clamp(m.delayMix, 0.12, 0.42);
+  delaySend.gain.value = m.delayMix;
   delaySend.connect(delay);
-  delay.connect(masterLP);
+  delay.connect(busFilter);
 
-  // Sidechain “fake” (very gentle breathing)
   const sidechain = ctx.createGain();
   sidechain.gain.value = 1.0;
   sidechain.connect(busFilter);
+  sidechain.connect(reverbSend);
 
-  // --- color → base pitch
-  const dominant = metrics.colors?.[0] || colors?.[0] || "#808080";
-  const { r, g, b } = hexToRgb01(dominant);
+  // PAD (ENHANCED WITH LFO)
+  const freqBase = clamp(lerp(75, 185, clamp(metrics.lum * 0.6 + metrics.sat * 0.4, 0, 1)), 68, 220);
+  const padBus = ctx.createGain();
+  padBus.gain.value = 0.0;
+  padBus.gain.setValueAtTime(0.0, 0);
+  padBus.gain.linearRampToValueAtTime(0.32, 8); // Fade in más lento
+  padBus.connect(sidechain);
 
-  // Keep it musical-ish
-  const baseFreq = 78 + r * 190; // ~78..268
-  const detuneSpread = clamp(m.detuneSpread, 6, 24);
+  // LFO para filtro (breathing effect)
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.frequency.value = 0.08; // Muy lento
+  lfoGain.gain.value = m.cutoff * 0.25;
+  
+  lfo.connect(lfoGain);
+  lfoGain.connect(busFilter.frequency);
+  lfo.start(0);
 
-  // PAD LAYER
-  const padOut = ctx.createGain();
-  padOut.gain.setValueAtTime(0.0, 0);
-  padOut.gain.linearRampToValueAtTime(0.22, 6);
-  padOut.connect(sidechain);
-  padOut.connect(revSend);
-  padOut.connect(delaySend);
+  const detunes = [-m.detuneSpread, 0, m.detuneSpread];
+  const oscOffsets = [0, 7, 19];
 
-  const padFilter = ctx.createBiquadFilter();
-  padFilter.type = "lowpass";
-  padFilter.frequency.value = clamp(m.cutoff * 0.9, 650, 5200);
-  padFilter.Q.value = 0.7;
-  padFilter.connect(padOut);
-
-  // gentle phasing feel
-  const padLfo = ctx.createOscillator();
-  padLfo.type = "sine";
-  padLfo.frequency.value = 0.06;
-  const padLfoGain = ctx.createGain();
-  padLfoGain.gain.value = 140 + metrics.sat * 260;
-  padLfo.connect(padLfoGain);
-  padLfoGain.connect(padFilter.frequency);
-  padLfo.start(0);
-
-  const ratios = [1, 1.25, 1.5, 2, 2.5];
-  ratios.forEach((mult, idx) => {
+  detunes.forEach((dt, idx) => {
     const osc = ctx.createOscillator();
-    osc.type = idx % 2 === 0 ? "sawtooth" : "triangle";
+    osc.type = "sawtooth";
+    osc.frequency.value = freqBase * (1 + oscOffsets[idx] / 1200);
+    osc.detune.value = dt;
 
-    const gNode = ctx.createGain();
-    gNode.gain.value = idx === 0 ? 0.16 : 0.09;
+    const oscGain = ctx.createGain();
+    oscGain.gain.value = clamp(0.12 - idx * 0.02, 0.06, 0.14);
+    osc.connect(oscGain);
+    oscGain.connect(padBus);
 
-    const det = (Math.random() * detuneSpread - detuneSpread / 2) + (idx - 2) * (detuneSpread * 0.18);
-    osc.detune.value = det;
-
-    const drift = 1 + (Math.random() - 0.5) * 0.01;
-    osc.frequency.value = baseFreq * mult * drift;
-
-    osc.connect(gNode);
-    gNode.connect(padFilter);
     osc.start(0);
+    osc.stop(duration);
   });
 
-  // TEXTURAL NOISE (grainy, filtered, very low)
+  // NOISE (más textura)
+  const noiseBuf = ctx.createBuffer(1, sampleRate * 4, sampleRate);
+  const noiseData = noiseBuf.getChannelData(0);
+  for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
+
   const noiseSrc = ctx.createBufferSource();
-  noiseSrc.buffer = makeNoiseBuffer(ctx, 3.0);
+  noiseSrc.buffer = noiseBuf;
   noiseSrc.loop = true;
 
   const noiseHP = ctx.createBiquadFilter();
@@ -409,17 +316,17 @@ async function generateAudio(colors, metrics) {
   noiseBP.Q.value = 0.9 + metrics.paletteVar * 8;
 
   const noiseGain = ctx.createGain();
-  noiseGain.gain.value = clamp(m.noiseLevel, 0.004, 0.03);
+  noiseGain.gain.value = m.noiseLevel;
 
   noiseSrc.connect(noiseHP);
   noiseHP.connect(noiseBP);
   noiseBP.connect(noiseGain);
   noiseGain.connect(sidechain);
-  noiseGain.connect(revSend);
+  noiseGain.connect(reverbSend);
 
   noiseSrc.start(0);
 
-  // PULSE: micro kick + hat (subtle)
+  // PULSE
   const pulseBus = ctx.createGain();
   pulseBus.gain.value = 0.18;
   pulseBus.connect(sidechain);
@@ -428,15 +335,12 @@ async function generateAudio(colors, metrics) {
   const kick = (t) => {
     const o = ctx.createOscillator();
     o.type = "sine";
-
     const gk = ctx.createGain();
     gk.gain.setValueAtTime(0.0001, t);
     gk.gain.exponentialRampToValueAtTime(0.13, t + 0.005);
     gk.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
-
     o.frequency.setValueAtTime(112 + b * 48, t);
     o.frequency.exponentialRampToValueAtTime(48 + b * 18, t + 0.14);
-
     o.connect(gk);
     gk.connect(pulseBus);
     o.start(t);
@@ -448,19 +352,15 @@ async function generateAudio(colors, metrics) {
     const nbuf = ctx.createBuffer(1, bufSize, sampleRate);
     const d = nbuf.getChannelData(0);
     for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
-
     const src = ctx.createBufferSource();
     src.buffer = nbuf;
-
     const hp = ctx.createBiquadFilter();
     hp.type = "highpass";
     hp.frequency.value = 4500 + g * 1600;
-
     const gn = ctx.createGain();
     gn.gain.setValueAtTime(0.0001, t);
     gn.gain.exponentialRampToValueAtTime(0.045, t + 0.003);
     gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-
     src.connect(hp);
     hp.connect(gn);
     gn.connect(pulseBus);
@@ -468,57 +368,45 @@ async function generateAudio(colors, metrics) {
     src.stop(t + 0.05);
   };
 
-  // FAKE SIDECHAIN: dip pad on each beat (breathing)
-  const scDepth = clamp(m.sidechainDepth, 0.02, 0.14);
+  // SIDECHAIN
+  const scDepth = m.sidechainDepth;
   const baseGain = 1.0;
   for (let t = 0.6; t < duration - 0.2; t += beat) {
-    // kick & hat
     kick(t);
     hat(t + beat / 2);
-
-    // sidechain: fast dip + recover
     sidechain.gain.setValueAtTime(baseGain, t - 0.001);
     sidechain.gain.linearRampToValueAtTime(baseGain * (1 - scDepth), t + 0.02);
     sidechain.gain.linearRampToValueAtTime(baseGain, t + 0.22);
   }
 
-  // A/B EVOLUTION (every ~18s): open filter, change delay feedback, shift pad tone slightly
-  const evolve = clamp(m.evolveAmount, 0.2, 1);
+  // A/B EVOLUTION (mejorado)
+  const evolve = m.evolveAmount;
   const sec = [0, 18, 36, 54];
   sec.forEach((start, idx) => {
     const end = Math.min(duration, start + 18);
-
-    // filter open
     const f0 = clamp(m.cutoff * (0.82 + 0.08 * idx), 650, 5200);
     const f1 = clamp(m.cutoff * (0.95 + 0.12 * evolve), 650, 5200);
     busFilter.frequency.setValueAtTime(f0, start);
     busFilter.frequency.linearRampToValueAtTime(f1, Math.min(end, start + 12));
 
-    // delay feedback breathe
     const fb0 = clamp(m.delayFeedback * (0.88 + 0.05 * idx), 0.12, 0.38);
     const fb1 = clamp(m.delayFeedback * (1.0 + 0.15 * evolve), 0.12, 0.42);
     fb.gain.setValueAtTime(fb0, start);
     fb.gain.linearRampToValueAtTime(fb1, Math.min(end, start + 10));
     fb.gain.linearRampToValueAtTime(fb0, Math.min(end, start + 18));
-
-    // noise band shifts a little (color feels alive)
-    const n0 = 800 + r * 2600 + idx * 120;
-    const n1 = 900 + r * 2400 + (idx % 2 ? 220 : -180) * evolve;
-    noiseBP.frequency.setValueAtTime(clamp(n0, 300, 6000), start);
-    noiseBP.frequency.linearRampToValueAtTime(clamp(n1, 300, 6000), Math.min(end, start + 12));
   });
 
   return await ctx.startRendering();
 }
 
 // ============================================================================
-// 5) EXPORT WAV
+// 4) EXPORT WAV
 // ============================================================================
 
 function audioBufferToWavBlob(audioBuffer) {
   const numChannels = audioBuffer.numberOfChannels;
   const sampleRate = audioBuffer.sampleRate;
-  const format = 1; // PCM
+  const format = 1;
   const bitDepth = 16;
 
   const numFrames = audioBuffer.length;
@@ -539,7 +427,6 @@ function audioBufferToWavBlob(audioBuffer) {
   view.setUint32(offset, 36 + dataSize, true);
   offset += 4;
   writeString("WAVE");
-
   writeString("fmt ");
   view.setUint32(offset, 16, true);
   offset += 4;
@@ -555,7 +442,6 @@ function audioBufferToWavBlob(audioBuffer) {
   offset += 2;
   view.setUint16(offset, bitDepth, true);
   offset += 2;
-
   writeString("data");
   view.setUint32(offset, dataSize, true);
   offset += 4;
@@ -578,535 +464,443 @@ function audioBufferToWavBlob(audioBuffer) {
 }
 
 // ============================================================================
-// 6) SPLINE + EQ + PARTICLES
+// 5) COMPONENTS - SPLINE (LAZY LOADED)
 // ============================================================================
 
 function SplineBackground({ volume }) {
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const observerRef = useRef();
+
   useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (observerRef.current) {
+      observer.observe(observerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!shouldLoad) return;
     if (!document.querySelector('script[src*="spline-viewer"]')) {
       const script = document.createElement("script");
       script.type = "module";
       script.src = "https://unpkg.com/@splinetool/viewer@1.12.53/build/spline-viewer.js";
       document.head.appendChild(script);
     }
-  }, []);
+  }, [shouldLoad]);
 
   return (
     <div
+      ref={observerRef}
       className="spline-viewport"
       style={{
         filter: `brightness(${0.74 + volume * 0.28})`,
         transform: `scale(${1 + volume * 0.02})`,
+        transition: 'filter 0.15s ease, transform 0.15s ease',
       }}
     >
-      <spline-viewer url="https://prod.spline.design/6wFT9lzZuaWY69mT/scene.splinecode" events-target="global" />
+      {shouldLoad && (
+        <spline-viewer url="https://prod.spline.design/6wFT9lzZuaWY69mT/scene.splinecode" events-target="global" />
+      )}
     </div>
   );
 }
 
-function FrequencyEqualizer({ analyserRef, isPlaying }) {
+// ============================================================================
+// 6) EQ TOPOGRAPHY (ENHANCED WITH SMOOTH CURVE)
+// ============================================================================
+
+function EQTopography({ analyser, isPlaying }) {
   const canvasRef = useRef(null);
-  const rafRef = useRef(null);
 
   useEffect(() => {
+    if (!analyser || !isPlaying || !canvasRef.current) return;
+
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
     const ctx = canvas.getContext("2d");
-
-    const resize = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-
-    resize();
-    window.addEventListener("resize", resize);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
     const draw = () => {
-      const rect = canvas.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
+      if (!isPlaying) return;
 
-      ctx.clearRect(0, 0, w, h);
-
-      // baseline: keep it stable (lower), so when playing it doesn't “jump”
-      const baselineY = h * 0.72;
-
-      const analyser = analyserRef?.current;
-
-      // baseline line (always one line)
-      ctx.beginPath();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(251,248,238,0.14)";
-      ctx.moveTo(0, baselineY);
-      ctx.lineTo(w, baselineY);
-      ctx.stroke();
-
-      if (!isPlaying || !analyser) {
-        rafRef.current = requestAnimationFrame(draw);
-        return;
-      }
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
       analyser.getByteFrequencyData(dataArray);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // topographic line (above baseline)
+      const barWidth = canvas.width / dataArray.length;
+      const heightScale = canvas.height / 255;
+
+      // Smooth curve
       ctx.beginPath();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(251,248,238,0.46)";
-      ctx.lineCap = "round";
+      ctx.moveTo(0, canvas.height);
 
-      const bins = Math.floor(bufferLength / 3);
-      const sliceWidth = w / bins;
-      let x = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const x = i * barWidth;
+        const y = canvas.height - dataArray[i] * heightScale;
 
-      for (let i = 0; i < bins; i++) {
-        const v = dataArray[i] / 255; // 0..1
-        const y = baselineY - v * (h * 0.55); // draw upwards
-
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-
-        x += sliceWidth;
+        if (i === 0) {
+          ctx.lineTo(x, y);
+        } else {
+          const prevX = (i - 1) * barWidth;
+          const prevY = canvas.height - dataArray[i - 1] * heightScale;
+          const cpX = (prevX + x) / 2;
+          ctx.quadraticCurveTo(prevX, prevY, cpX, (prevY + y) / 2);
+        }
       }
 
+      ctx.strokeStyle = "rgba(251,248,238,0.85)";
+      ctx.lineWidth = 1.5;
       ctx.stroke();
-      rafRef.current = requestAnimationFrame(draw);
+
+      // Gradient fill
+      ctx.lineTo(canvas.width, canvas.height);
+      ctx.closePath();
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, "rgba(251,248,238,0.18)");
+      gradient.addColorStop(1, "rgba(251,248,238,0.02)");
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      requestAnimationFrame(draw);
     };
 
-    rafRef.current = requestAnimationFrame(draw);
+    draw();
+  }, [analyser, isPlaying]);
 
-    return () => {
-      window.removeEventListener("resize", resize);
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [analyserRef, isPlaying]);
-
-  return (
-    <div className="eq-wrapper">
-      <span className="label-tiny">Pulso</span>
-      <canvas ref={canvasRef} className="eq-topo" />
-    </div>
-  );
+  return <canvas ref={canvasRef} className="eq-topo" width={800} height={54} />;
 }
 
-function hexToRgba(hex, alpha) {
-  const h = (hex || "#000000").replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16) || 0;
-  const g = parseInt(h.slice(2, 4), 16) || 0;
-  const b = parseInt(h.slice(4, 6), 16) || 0;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
+// ============================================================================
+// 7) PARTICLES (ENHANCED - MORE SUBTLE)
+// ============================================================================
 
-function SubtleParticles({ colors = [], active, energy = 0 }) {
+function ParticlesCanvas({ colors, isPlaying, volumeEnergy = 0 }) {
   const canvasRef = useRef(null);
-  const rafRef = useRef(null);
-  const particlesRef = useRef([]);
-  const energyRef = useRef(0);
-  const rectRef = useRef({ w: 1, h: 1 });
 
   useEffect(() => {
-    energyRef.current = energy;
-  }, [energy]);
-
-  useEffect(() => {
-    if (!active || !canvasRef.current) return;
-
+    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { alpha: true });
-    const palette = (colors?.length ? colors : ["#FBF8EE"]).slice(0, 5);
+    const ctx = canvas.getContext("2d");
 
-    const resize = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const rect = canvas.getBoundingClientRect();
-      rectRef.current = { w: rect.width, h: rect.height };
+    const particles = Array.from({ length: 30 }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      size: Math.random() * 1.5 + 0.5,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      alpha: Math.random() * 0.4 + 0.2,
+    }));
 
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (particlesRef.current.length === 0) {
-        const count = 18;
-        particlesRef.current = Array.from({ length: count }).map(() => ({
-          x: Math.random() * rect.width,
-          y: Math.random() * rect.height,
-          r: 1 + Math.random() * 2.2,
-          vx: (Math.random() - 0.5) * 0.18,
-          vy: (Math.random() - 0.5) * 0.18,
-          a: 0.06 + Math.random() * 0.10,
-          c: palette[Math.floor(Math.random() * palette.length)],
-          drift: 0.6 + Math.random() * 0.9,
-        }));
-      }
-    };
+      particles.forEach((p) => {
+        p.x += p.vx * (1 + volumeEnergy * 2);
+        p.y += p.vy * (1 + volumeEnergy * 2);
 
-    resize();
-    window.addEventListener("resize", resize);
-
-    const step = () => {
-      const { w, h } = rectRef.current;
-      const e = clamp(energyRef.current, 0, 1);
-
-      const speedBoost = 1 + e * 0.35;
-      const alphaBoost = 1 + e * 0.18;
-
-      ctx.clearRect(0, 0, w, h);
-
-      for (const p of particlesRef.current) {
-        const boost = speedBoost * p.drift;
-        p.x += p.vx * boost;
-        p.y += p.vy * boost;
-
-        if (p.x < -10) p.x = w + 10;
-        if (p.x > w + 10) p.x = -10;
-        if (p.y < -10) p.y = h + 10;
-        if (p.y > h + 10) p.y = -10;
+        if (p.x < 0) p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0) p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
 
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(p.c, clamp(p.a * alphaBoost, 0.04, 0.22));
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.alpha * (0.7 + volumeEnergy * 0.3);
+        ctx.shadowBlur = 8 + volumeEnergy * 12;
+        ctx.shadowColor = p.color;
         ctx.fill();
-      }
+      });
 
-      // super subtle “film”
-      ctx.fillStyle = "rgba(0,0,0,0.02)";
-      ctx.fillRect(0, 0, w, h);
-
-      rafRef.current = requestAnimationFrame(step);
+      requestAnimationFrame(draw);
     };
 
-    rafRef.current = requestAnimationFrame(step);
+    draw();
+  }, [colors, isPlaying, volumeEnergy]);
 
-    return () => {
-      window.removeEventListener("resize", resize);
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      particlesRef.current = [];
-    };
-  }, [active, colors]);
-
-  return <canvas ref={canvasRef} className="particles-canvas" />;
+  return <canvas ref={canvasRef} className="particles-canvas" width={800} height={600} />;
 }
 
 // ============================================================================
-// 7) LOADING PHRASES (random, no-repeat until exhausted)
+// 8) MAIN APP
 // ============================================================================
 
-const LOADING_PHRASES = [
-  "Afinando el silencio…",
-  "Dibujando una sombra sonora…",
-  "Abriendo una grieta en el aire…",
-  "Convirtiendo luz en pulso…",
-  "Escuchando lo que la imagen no dice…",
-  "Enhebrando un recuerdo…",
-  "Dejando que el color respire…",
-  "Buscando la frecuencia exacta…",
-];
-
-function useNonRepeatingPicker(items) {
-  const bagRef = useRef([]);
-  const pickOne = () => {
-    if (!bagRef.current.length) {
-      bagRef.current = [...items];
-    }
-    const idx = Math.floor(Math.random() * bagRef.current.length);
-    const v = bagRef.current[idx];
-    bagRef.current.splice(idx, 1);
-    return v;
-  };
-  return pickOne;
-}
-
-// ============================================================================
-// 8) APP
-// ============================================================================
-
-export default function Synesthesia() {
+export default function App() {
+  const [stage, setStage] = useState("hero");
   const [imageFile, setImageFile] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
-
-  const [palette, setPalette] = useState([]);
+  const [colors, setColors] = useState([]);
   const [metrics, setMetrics] = useState(null);
-
-  const [analysis, setAnalysis] = useState(null);
   const [audioBuffer, setAudioBuffer] = useState(null);
-
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(0);
-
-  const [error, setError] = useState(null);
-  const [toast, setToast] = useState(null);
-  const [loadingLine, setLoadingLine] = useState(null);
+  const [loadingMsg, setLoadingMsg] = useState("");
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
 
   const audioContextRef = useRef(null);
-  const sourceNodeRef = useRef(null);
+  const sourceRef = useRef(null);
   const analyserRef = useRef(null);
+  const volumeRef = useRef(0);
 
-  const pickLoading = useNonRepeatingPicker(LOADING_PHRASES);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2200);
-    return () => clearTimeout(t);
-  }, [toast]);
+  const textura = useMemo(() => (metrics ? deriveTextureFromMetrics(metrics) : ""), [metrics]);
+  const mood = useMemo(() => (metrics ? deriveMoodFromMetrics(metrics) : ""), [metrics]);
+  const bpm = useMemo(() => (metrics ? deriveBpmFromMetrics(metrics) : 0), [metrics]);
+  const atmo = useMemo(() => (mood && POOLS_ATMOS[mood] ? pick(POOLS_ATMOS[mood]) : ""), [mood]);
 
-  useEffect(() => {
-    if (!isPlaying || !analyserRef.current) return;
-    const data = new Uint8Array(analyserRef.current.frequencyBinCount);
-    const frame = () => {
-      if (!isPlaying) return;
-      analyserRef.current.getByteFrequencyData(data);
-      setVolume(data.reduce((a, b) => a + b, 0) / data.length / 255);
-      requestAnimationFrame(frame);
-    };
-    frame();
-  }, [isPlaying]);
-
-  const stopPlayback = () => {
-    try {
-      sourceNodeRef.current?.stop();
-    } catch (_) {}
-    setIsPlaying(false);
-  };
-
-  const resetAll = () => {
-    stopPlayback();
-    setImageFile(null);
-    setImageUrl(null);
-    setPalette([]);
-    setMetrics(null);
-    setAnalysis(null);
-    setAudioBuffer(null);
-    setError(null);
-    setVolume(0);
-    setLoadingLine(null);
-  };
-
-  const toggleAudio = () => {
-    if (isPlaying) {
-      stopPlayback();
-      return;
-    }
-    if (!audioBuffer) return;
-
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    analyserRef.current = audioContextRef.current.createAnalyser();
-    analyserRef.current.fftSize = 2048;
-
-    sourceNodeRef.current = audioContextRef.current.createBufferSource();
-    sourceNodeRef.current.buffer = audioBuffer;
-
-    sourceNodeRef.current.connect(analyserRef.current);
-    analyserRef.current.connect(audioContextRef.current.destination);
-
-    sourceNodeRef.current.start(0);
-    setIsPlaying(true);
-    sourceNodeRef.current.onended = () => setIsPlaying(false);
-  };
-
-  const handleDownload = () => {
-    if (!audioBuffer) return;
-
-    const blob = audioBufferToWavBlob(audioBuffer);
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "synesthesia-pieza-sonora.wav";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    setToast("Descargado.");
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-  };
-
-  const onUpload = async (file) => {
-    setError(null);
-    setToast(null);
-
+  // Handle image upload
+  const handleImageUpload = async (file) => {
     if (!file) return;
-
-    const okTypes = ["image/jpeg", "image/png", "image/webp"];
-    const maxBytes = 10 * 1024 * 1024;
-
-    if (!okTypes.includes(file.type)) {
-      setError("Formato no compatible. Usa JPG, PNG o WEBP.");
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Formato no soportado. Usa JPG, PNG o WEBP.");
       return;
     }
-    if (file.size > maxBytes) {
-      setError("La imagen es demasiado grande. Elige una de hasta 10 MB.");
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Imagen demasiado grande. Máximo 10MB.");
       return;
     }
-
-    stopPlayback();
 
     setImageFile(file);
     setImageUrl(URL.createObjectURL(file));
-    setIsGenerating(true);
-    setAudioBuffer(null);
-    setAnalysis(null);
-
-    // random loading phrase (no-repeat)
-    setLoadingLine(pickLoading());
+    setStage("loading");
+    setError("");
 
     try {
-      const { colors } = await extractColors(file);
-      const m = deriveColorMetrics(colors);
-      const mood = deriveMoodFromMetrics(m);
-      const textura = deriveTextureFromMetrics(m);
-      const bpm = deriveBpmFromMetrics(m);
-      const atmosphere = pick(POOLS_ATMOS[mood] || POOLS_ATMOS.suspendida);
+      setLoadingMsg("Extrayendo colores...");
+      const { colors: extracted } = await extractColors(file);
+      setColors(extracted);
 
-      // Optional caption (no dependency)
-      const { caption } = await analyzeImageWithFreeAI(file);
-
-      const nextAnalysis = {
-        caption,
-        mood,
-        bpm,
-        genre: textura,
-        atmosphere,
-      };
-
-      setPalette(colors);
+      setLoadingMsg("Interpretando métricas...");
+      const m = deriveColorMetrics(extracted);
       setMetrics(m);
-      setAnalysis(nextAnalysis);
 
-      const buffer = await generateAudio(colors, m);
+      setLoadingMsg("Sintetizando música...");
+      const buffer = await generateMusic(m);
       setAudioBuffer(buffer);
-    } catch (e) {
-      console.warn(e);
-      setError("No hemos podido generar el sonido. Prueba con otra imagen.");
-    } finally {
-      setIsGenerating(false);
+
+      setStage("experience");
+    } catch (err) {
+      setError("Error al procesar. Intenta otra imagen.");
+      setStage("hero");
+      console.error(err);
     }
   };
 
-  const ariaMain = isPlaying ? "Pausar" : "Escuchar";
+  // Play/Pause with fade
+  const handlePlayPause = () => {
+    if (!audioBuffer) return;
+
+    if (isPlaying) {
+      const gainNode = audioContextRef.current.createGain();
+      sourceRef.current.disconnect();
+      sourceRef.current.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+
+      gainNode.gain.setValueAtTime(1, audioContextRef.current.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0, audioContextRef.current.currentTime + 0.3);
+
+      setTimeout(() => {
+        sourceRef.current?.stop();
+        setIsPlaying(false);
+      }, 300);
+    } else {
+      audioContextRef.current = new AudioContext();
+      sourceRef.current = audioContextRef.current.createBufferSource();
+      const gainNode = audioContextRef.current.createGain();
+      
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      analyserRef.current.fftSize = 256;
+
+      sourceRef.current.buffer = audioBuffer;
+      sourceRef.current.connect(analyserRef.current);
+      analyserRef.current.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+
+      gainNode.gain.setValueAtTime(0, audioContextRef.current.currentTime);
+      gainNode.gain.linearRampToValueAtTime(1, audioContextRef.current.currentTime + 0.5);
+
+      sourceRef.current.onended = () => setIsPlaying(false);
+      sourceRef.current.start(0);
+      setIsPlaying(true);
+
+      // Volume monitor
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+      const monitor = () => {
+        if (!isPlaying) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+        volumeRef.current = dataArray.reduce((a, b) => a + b, 0) / dataArray.length / 255;
+        requestAnimationFrame(monitor);
+      };
+      monitor();
+    }
+  };
+
+  // Download
+  const handleDownload = () => {
+    if (!audioBuffer) return;
+    const blob = audioBufferToWavBlob(audioBuffer);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `synesthesia-${textura.toLowerCase()}.wav`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Descargando...");
+  };
+
+  // Share
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Synesthesia",
+          text: `Mi viaje sonoro: ${mood} · ${textura}`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.log("Share cancelled");
+      }
+    } else {
+      showToast("Compartir no disponible");
+    }
+  };
+
+  // Reset
+  const handleReset = () => {
+    if (sourceRef.current) sourceRef.current.stop();
+    setStage("hero");
+    setImageFile(null);
+    setImageUrl(null);
+    setColors([]);
+    setMetrics(null);
+    setAudioBuffer(null);
+    setIsPlaying(false);
+    setError("");
+  };
+
+  // Toast
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2000);
+  };
+
+  // Dark mode easter egg
+  const handleTitleDoubleClick = () => {
+    setIsDarkMode(!isDarkMode);
+    document.documentElement.style.setProperty("--pitch", isDarkMode ? "#050505" : "#fbf8ee");
+    document.documentElement.style.setProperty("--ivory", isDarkMode ? "#fbf8ee" : "#050505");
+  };
 
   return (
-    <div className="app-canvas">
-      <SplineBackground volume={volume} />
-      {imageFile && <div className="bg-dim" />}
+    <div className="app">
+      <SplineBackground volume={volumeRef.current} />
 
       <div className="ui-overlay">
-        {!imageFile ? (
-          <div className="hero-editorial">
-            <h1 className="main-title">Synesthesia</h1>
-            <p className="tagline">DONDE UN RECUERDO ENCUENTRA SU SONIDO</p>
-            <p className="subcopy">Sube una imagen y escucha qué sonido despierta.</p>
+        {stage === "hero" && (
+          <div className="hero-stage">
+            <h1 className="main-title" onDoubleClick={handleTitleDoubleClick} style={{ cursor: 'pointer' }}>
+              Synesthesia
+            </h1>
+            <p className="hero-subtitle">Donde cada imagen tiene su propia música</p>
 
-            <label className="upload-trigger" role="button" tabIndex={0}>
-              <input
-                type="file"
-                hidden
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(e) => onUpload(e.target.files?.[0])}
-              />
-              <Upload size={18} strokeWidth={1} />
-              <span>Subir una imagen</span>
+            <input
+              type="file"
+              id="upload"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => handleImageUpload(e.target.files[0])}
+              style={{ display: "none" }}
+            />
+            <label htmlFor="upload" className="upload-trigger">
+              <Upload size={20} strokeWidth={1.8} />
+              <span>Entrega una memoria</span>
             </label>
+            <div className="upload-specs">JPG · PNG · WEBP | Máximo 10MB</div>
 
-            <div className="upload-specs">JPG / PNG / WEBP · hasta 10 MB</div>
             {error && <div className="hero-error">{error}</div>}
           </div>
-        ) : (
+        )}
+
+        {stage === "loading" && (
+          <div className="loading-stage">
+            <div className="spinner" />
+            <p>{loadingMsg}</p>
+          </div>
+        )}
+
+        {stage === "experience" && (
           <div className="experience-grid">
-            <div className="visual-side">
-              <div className="image-frame">
-                <SubtleParticles colors={palette} active={!isGenerating} energy={isPlaying ? volume : 0.08} />
-                <img src={imageUrl} alt="Recuerdo" />
-                {isGenerating && (
-                  <div className="curtain">
-                    <span>{loadingLine || "Afinando el silencio…"}</span>
-                  </div>
-                )}
-              </div>
+            <div className="image-frame">
+              {isPlaying && <ParticlesCanvas colors={colors} isPlaying={isPlaying} volumeEnergy={volumeRef.current} />}
+              <img src={imageUrl} alt="Memory" />
+              {isPlaying && (
+                <div className="curtain">
+                  <span style={{ opacity: 0.7 }}>Reproduciendo...</span>
+                </div>
+              )}
             </div>
 
-            <div className="content-side">
-              {error && <div className="panel-error">{error}</div>}
+            <div className="panel">
+              <div className="small-cap">Textura</div>
+              <div className="mood-name">{mood}</div>
+              <div className="quote">{atmo}</div>
 
-              {analysis && !isGenerating && (
-                <div className="editorial-player">
-                  <span className="small-cap">Lo que resuena</span>
-                  <h2 className="mood-name">{analysis.mood}</h2>
+              <div className="eq-wrapper">
+                <div className="label-tiny">Frecuencias</div>
+                <EQTopography analyser={analyserRef.current} isPlaying={isPlaying} />
+              </div>
 
-                  <p className="quote">“{analysis.atmosphere}”</p>
-
-                  <FrequencyEqualizer analyserRef={analyserRef} isPlaying={isPlaying} />
-
-                  {/* META ROW: Tempo · Textura(+paleta) · Botones */}
-                  <div className="meta-row">
-                    <div className="details">
-                      <div className="detail-item">
-                        <span className="small-cap">Tempo</span>
-                        <p>{analysis.bpm} BPM</p>
-                      </div>
-
-                      <div className="detail-item">
-                        <span className="small-cap">Textura</span>
-
-                        <div className="texture-line">
-                          <p>{analysis.genre}</p>
-
-                          {palette?.length > 0 && (
-                            <div className="palette-dots" aria-label="Paleta">
-                              {palette.slice(0, 4).map((c) => (
-                                <span key={c} className="dot" style={{ background: c }} />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="meta-controls">
-                        <button
-                          className="main-btn"
-                          onClick={toggleAudio}
-                          aria-label={ariaMain}
-                          disabled={!audioBuffer || isGenerating}
-                          title={ariaMain}
-                        >
-                          {isPlaying ? (
-                            <Pause size={34} strokeWidth={1} />
-                          ) : (
-                            <Play size={34} strokeWidth={1} style={{ marginLeft: 4 }} />
-                          )}
-                        </button>
-
-                        <button
-                          className="ghost-btn"
-                          onClick={handleDownload}
-                          aria-label="Descargar"
-                          disabled={!audioBuffer || isGenerating}
-                          title="Descargar"
-                        >
-                          <Download size={26} strokeWidth={1} />
-                        </button>
-
-                        <button
-                          className="ghost-btn"
-                          onClick={resetAll}
-                          aria-label="Volver a empezar"
-                          title="Volver a empezar"
-                        >
-                          <RefreshCw size={26} strokeWidth={1} />
-                        </button>
-                      </div>
+              <div className="meta-row">
+                <div className="details">
+                  <div className="detail-item">
+                    <div className="small-cap">Tempo</div>
+                    <div className="mood-name" style={{ fontSize: "1.8rem", margin: 0 }}>
+                      {bpm}
                     </div>
                   </div>
 
-                  {/* (Optional debug — remove if you want)
-                  {analysis.caption && <div className="caption-debug">Caption: {analysis.caption}</div>}
-                  */}
+                  <div className="detail-item texture-line">
+                    <div>
+                      <div className="small-cap">Textura</div>
+                      <div className="mood-name" style={{ fontSize: "1.8rem", margin: 0 }}>
+                        {textura}
+                      </div>
+                    </div>
+                    <div className="palette-dots">
+                      {colors.map((c, i) => (
+                        <div key={i} className="dot" style={{ backgroundColor: c }} />
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              )}
+              </div>
+
+              <div className="meta-controls">
+                <button onClick={handlePlayPause} className={`main-btn ${isPlaying ? 'is-playing' : ''}`} disabled={!audioBuffer}>
+                  {isPlaying ? <Pause size={22} /> : <Play size={22} />}
+                </button>
+                <button onClick={handleDownload} className="ghost-btn" title="Descargar WAV" disabled={!audioBuffer}>
+                  <Download size={20} />
+                </button>
+                <button onClick={handleShare} className="ghost-btn" title="Compartir">
+                  <Share2 size={20} />
+                </button>
+                <button onClick={handleReset} className="ghost-btn" title="Nueva imagen">
+                  <RefreshCw size={20} />
+                </button>
+              </div>
+
+              {error && <div className="panel-error">{error}</div>}
             </div>
           </div>
         )}
@@ -1115,77 +909,87 @@ export default function Synesthesia() {
       {toast && <div className="toast">{toast}</div>}
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,300;1,500&family=Inter:wght@200;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,400;1,600&family=Inter:wght@300;400;500;600&display=swap');
 
-        :root { --ivory: #FBF8EE; --pitch: #050505; --rose: #ff2d55; }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        .app-canvas {
-          background: var(--pitch);
-          color: var(--ivory);
-          width: 100vw;
-          min-height: 100svh;
-          overflow-y: auto;
-          overflow-x: hidden;
-          font-family: 'Inter', sans-serif;
-          position: relative;
+        :root {
+          --pitch: #050505;
+          --ivory: #fbf8ee;
         }
 
-        .spline-viewport { z-index: 0; }
-        .bg-dim { z-index: 1; }
-        .ui-overlay { z-index: 10; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+          width: 100%;
+          height: 100%;
+          overflow-x: hidden;
+        }
+
+        .app {
+          position: relative;
+          min-height: 100vh;
+          background: var(--pitch);
+          color: var(--ivory);
+          font-family: 'Inter', sans-serif;
+          overflow: hidden;
+        }
 
         .spline-viewport {
           position: fixed;
           inset: 0;
+          z-index: 0;
           pointer-events: auto;
-          transition: filter 0.35s ease, transform 0.35s ease;
-          transform-origin: center;
-        }
-        spline-viewer { width: 100%; height: 100%; display: block; }
-
-        .bg-dim {
-          position: fixed;
-          inset: 0;
-          pointer-events: none;
-          background: radial-gradient(1200px 800px at 60% 45%, rgba(0,0,0,0.22), rgba(0,0,0,0.52)), rgba(0,0,0,0.16);
         }
 
         .ui-overlay {
           position: relative;
-          min-height: 100svh;
-          pointer-events: none;
+          z-index: 10;
+          min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 60px 20px;
+          padding: 60px 40px;
+          pointer-events: none;
         }
-        .ui-overlay > * { pointer-events: auto; }
+
+        .ui-overlay > * {
+          pointer-events: auto;
+        }
 
         /* HERO */
-        .hero-editorial { text-align: center; max-width: 720px; padding: 0 14px; }
+        .hero-stage {
+          text-align: center;
+          max-width: 600px;
+        }
+
         .main-title {
           font-family: 'Cormorant Garamond', serif;
-          font-size: clamp(3.5rem, 12vw, 8rem);
+          font-size: clamp(4rem, 12vw, 8rem);
           font-style: italic;
-          font-weight: 300;
-          letter-spacing: -0.05em;
-          margin-bottom: 0.5rem;
+          font-weight: 400;
+          letter-spacing: -0.03em;
+          margin-bottom: 1rem;
+          animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .tagline{
-          letter-spacing: 0.36em;
-          font-size: 0.65rem;
-          opacity: 0.70;
-          margin-bottom: 1.3rem;
-          text-transform: uppercase;
+
+        @keyframes fade-in-up {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
-        .subcopy{
-          max-width: 520px;
-          margin: 0 auto 2rem;
+
+        .hero-subtitle {
           font-size: 0.95rem;
           line-height: 1.6;
           opacity: 0.88;
+          margin-bottom: 3rem;
+          animation: fade-in-up 0.8s 0.2s cubic-bezier(0.16, 1, 0.3, 1) backwards;
         }
+
         .upload-trigger {
           display: inline-flex;
           align-items: center;
@@ -1198,18 +1002,50 @@ export default function Synesthesia() {
           letter-spacing: 0.1em;
           transition: 0.35s;
           user-select: none;
+          animation: fade-in-up 0.8s 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
         }
-        .upload-trigger:hover { background: var(--ivory); color: var(--pitch); }
-        .upload-specs{
+
+        .upload-trigger:hover {
+          background: var(--ivory);
+          color: var(--pitch);
+          transform: translateY(-2px);
+        }
+
+        .upload-specs {
           margin-top: 10px;
           font-size: 0.7rem;
           letter-spacing: 0.12em;
           opacity: 0.60;
           text-transform: uppercase;
         }
-        .hero-error{ margin-top: 18px; font-size: 0.85rem; opacity: 0.86; }
 
-        /* GRID */
+        .hero-error {
+          margin-top: 18px;
+          font-size: 0.85rem;
+          opacity: 0.86;
+          color: #ff6b6b;
+        }
+
+        /* LOADING */
+        .loading-stage {
+          text-align: center;
+        }
+
+        .spinner {
+          width: 60px;
+          height: 60px;
+          border: 3px solid rgba(251,248,238,0.2);
+          border-top-color: var(--ivory);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 2rem;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        /* EXPERIENCE */
         .experience-grid {
           display: grid;
           grid-template-columns: 1fr 450px;
@@ -1245,11 +1081,15 @@ export default function Synesthesia() {
           object-fit: cover;
         }
 
-        .curtain{
-          position:absolute; inset:0; z-index:2;
+        .curtain {
+          position: absolute;
+          inset: 0;
+          z-index: 2;
           background: rgba(5,5,5,0.92);
-          display:flex; align-items:center; justify-content:center;
-          font-family:'Cormorant Garamond', serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: 'Cormorant Garamond', serif;
           font-style: italic;
           font-size: 1.5rem;
           letter-spacing: -0.01em;
@@ -1268,6 +1108,7 @@ export default function Synesthesia() {
           font-style: italic;
           line-height: 1;
           margin: 0.5rem 0 1rem;
+          animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .quote {
@@ -1281,140 +1122,158 @@ export default function Synesthesia() {
         }
 
         /* EQ */
-        .eq-wrapper { margin: 1.1rem 0 1.35rem; }
-        .label-tiny {
-          display:block;
-          font-size:0.6rem;
-          text-transform:uppercase;
-          letter-spacing:0.22em;
-          opacity:0.44;
-          margin-bottom:10px;
+        .eq-wrapper {
+          margin: 1.1rem 0 1.35rem;
         }
-        .eq-topo{
-          width:100%;
-          height:54px;
+
+        .label-tiny {
+          display: block;
+          font-size: 0.6rem;
+          text-transform: uppercase;
+          letter-spacing: 0.22em;
+          opacity: 0.44;
+          margin-bottom: 10px;
+        }
+
+        .eq-topo {
+          width: 100%;
+          height: 54px;
           border-bottom: 1px solid rgba(251,248,238,0.12);
         }
 
         /* META */
-        .meta-row{
-          display:flex;
-          align-items:flex-end;
-          justify-content:flex-start;
+        .meta-row {
+          display: flex;
+          align-items: flex-end;
+          justify-content: flex-start;
         }
 
-        /* Tempo · Textura · Botones: same spacing rhythm */
-        .details{
-          display:flex;
-          align-items:flex-end;
-          gap: 3rem; /* baseline rhythm */
+        .details {
+          display: flex;
+          align-items: flex-end;
+          gap: 3rem;
           flex-wrap: wrap;
           min-width: 0;
         }
 
-        .detail-item{
+        .detail-item {
           min-width: max-content;
         }
 
-        /* Textura line: text + dots inline */
-        .texture-line{
-          display:flex;
-          align-items:center;
-          gap: 3rem; /* SAME as Tempo/Textura gap */
+        .texture-line {
+          display: flex;
+          align-items: center;
+          gap: 3rem;
         }
 
-        .palette-dots{
-          display:flex;
-          gap:10px;
-          align-items:center;
+        .palette-dots {
+          display: flex;
+          gap: 10px;
+          align-items: center;
           margin: 0;
           padding: 0;
           opacity: 0.95;
           flex: 0 0 auto;
         }
-        .dot{
+
+        .dot {
           width: 10px;
           height: 10px;
           border-radius: 999px;
           border: 1px solid rgba(251,248,238,0.18);
           box-shadow: 0 0 18px rgba(251,248,238,0.10);
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          cursor: pointer;
         }
 
-        .meta-controls{
-          display:flex;
-          align-items:center;
+        .dot:hover {
+          transform: scale(1.6);
+          box-shadow: 0 0 24px currentColor;
+        }
+
+        .meta-controls {
+          display: flex;
+          align-items: center;
           gap: 1.2rem;
+          margin-top: 1.5rem;
         }
 
-        /* Buttons (keep the “good design” feel) */
+        /* BUTTONS */
         .main-btn {
-          width: 80px; height: 80px;
+          width: 80px;
+          height: 80px;
           border-radius: 999px;
           border: 1px solid var(--ivory);
           background: transparent;
           color: var(--ivory);
           cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           transition: 0.35s;
         }
-        .main-btn:hover { background: var(--ivory); color: var(--pitch); transform: translateY(-1px); box-shadow: 0 0 40px rgba(255,45,85,0.45); }
-        .main-btn:disabled{ opacity:0.35; cursor:not-allowed; transform:none; box-shadow:none; }
+
+        .main-btn:hover {
+          background: var(--ivory);
+          color: var(--pitch);
+          transform: translateY(-1px);
+          box-shadow: 0 0 40px rgba(251,248,238,0.45);
+        }
+
+        .main-btn.is-playing {
+          animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% {
+            box-shadow: 0 0 20px rgba(251,248,238,0.3);
+          }
+          50% {
+            box-shadow: 0 0 40px rgba(251,248,238,0.6);
+          }
+        }
+
+        .main-btn:disabled {
+          opacity: 0.35;
+          cursor: not-allowed;
+          transform: none;
+          box-shadow: none;
+        }
 
         .ghost-btn {
-          width: 68px; height: 68px;
+          width: 68px;
+          height: 68px;
           border-radius: 999px;
           border: 1px solid rgba(251,248,238,0.16);
           background: rgba(5,5,5,0.18);
           color: var(--ivory);
           cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           backdrop-filter: blur(6px);
           transition: 0.25s;
         }
-        .ghost-btn:hover{ border-color: rgba(251,248,238,0.45); transform: translateY(-1px); }
-        .ghost-btn:disabled{ opacity:0.35; cursor:not-allowed; transform:none; }
 
-        .panel-error{ margin-bottom: 18px; font-size: 0.9rem; opacity: 0.86; }
-
-        /* Responsive */
-        @media (max-width: 1000px) {
-          .experience-grid { grid-template-columns: 1fr; gap: 1.5rem; }
-          .image-frame { height: 35vh; min-height: 250px; }
-          .ui-overlay { padding: 40px 15px; }
-          .mood-name { font-size: 3rem; }
+        .ghost-btn:hover {
+          border-color: rgba(251,248,238,0.45);
+          transform: translateY(-1px);
         }
 
-        @media (max-width: 500px) {
-          .main-title { font-size: 4rem; }
-
-          .experience-grid {
-            gap: 14px;
-            width: 94vw;
-            align-items: flex-start;
-          }
-
-          /* smaller image to reduce scroll */
-          .image-frame {
-            height: 24vh;
-            min-height: 170px;
-          }
-
-          .quote { font-size: 1.05rem; }
-
-          .details { gap: 2rem; }
-          .texture-line{ gap: 2rem; }
-
-          /* buttons stay left, wrap below if needed */
-          .meta-controls{
-            width: 100%;
-            justify-content: flex-start;
-            margin-top: 8px;
-          }
-
-          .main-btn { width: 80px; height: 80px; }
-          .ghost-btn { width: 68px; height: 68px; }
+        .ghost-btn:disabled {
+          opacity: 0.35;
+          cursor: not-allowed;
+          transform: none;
         }
 
+        .panel-error {
+          margin-bottom: 18px;
+          font-size: 0.9rem;
+          opacity: 0.86;
+          color: #ff6b6b;
+        }
+
+        /* TOAST */
         .toast {
           position: fixed;
           left: 50%;
@@ -1427,6 +1286,87 @@ export default function Synesthesia() {
           z-index: 100;
           border: 1px solid rgba(251,248,238,0.14);
           backdrop-filter: blur(10px);
+          animation: fade-in-up 0.3s ease;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 1000px) {
+          .experience-grid {
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+          }
+          .image-frame {
+            height: 35vh;
+            min-height: 250px;
+          }
+          .ui-overlay {
+            padding: 40px 15px;
+          }
+          .mood-name {
+            font-size: 3rem;
+          }
+        }
+
+        @media (max-width: 500px) {
+          .main-title {
+            font-size: 4rem;
+          }
+          .experience-grid {
+            gap: 14px;
+            width: 94vw;
+            align-items: flex-start;
+          }
+          .image-frame {
+            height: 24vh;
+            min-height: 170px;
+          }
+          .quote {
+            font-size: 1.05rem;
+          }
+          .details {
+            gap: 2rem;
+          }
+          .texture-line {
+            gap: 2rem;
+          }
+          .meta-controls {
+            width: 100%;
+            justify-content: flex-start;
+            margin-top: 8px;
+          }
+          .main-btn {
+            width: 80px;
+            height: 80px;
+          }
+          .ghost-btn {
+            width: 68px;
+            height: 68px;
+          }
+        }
+
+        /* TOUCH DEVICES */
+        @media (hover: none) and (pointer: coarse) {
+          .main-btn,
+          .ghost-btn {
+            min-width: 88px;
+            min-height: 88px;
+          }
+          .main-btn:active {
+            transform: scale(0.95);
+          }
+          .main-btn:hover,
+          .ghost-btn:hover {
+            transform: none;
+          }
+        }
+
+        /* SAFE AREA FOR IPHONE X+ */
+        @supports (padding: max(0px)) {
+          .ui-overlay {
+            padding-left: max(40px, env(safe-area-inset-left));
+            padding-right: max(40px, env(safe-area-inset-right));
+            padding-bottom: max(60px, env(safe-area-inset-bottom));
+          }
         }
       `}</style>
     </div>
