@@ -295,7 +295,7 @@ export default function App() {
 
         .hero-stage { text-align: center; max-width: 800px; display: flex; flex-direction: column; align-items: center; }
         .main-title { font-family: 'Cormorant Garamond', serif; font-size: clamp(4rem, 12vw, 9rem); font-style: italic; line-height: 1; }
-        .hero-subtitle { opacity: 0.8; font-size: 1.1rem; margin-top: 1rem; }
+        .hero-subtitle { opacity: 0.8; font-size: 1.1rem; margin-top: 1rem; margin-bottom: 2.5rem; }
         .home-spacer { height: 3.5rem; }
         .upload-trigger { display: inline-flex; align-items: center; gap: 12px; padding: 1.2rem 2.5rem; border: 1px solid rgba(251,248,238,0.3); cursor: pointer; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.1em; transition: 0.3s; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); }
         .upload-trigger:hover { background: var(--ivory); color: var(--pitch); }
