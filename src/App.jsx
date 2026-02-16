@@ -916,12 +916,8 @@ export default function App() {
     --ivory: #fbf8ee;
   }
 
-  /* RESET TOTAL: Anulamos márgenes de Vite y el desplazamiento a la izquierda */
-  * { 
-    margin: 0; 
-    padding: 0; 
-    box-sizing: border-box; 
-  }
+  /* RESET PARA EVITAR DESPLAZAMIENTOS */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
   html, body, #root {
     width: 100% !important;
@@ -930,7 +926,6 @@ export default function App() {
     padding: 0 !important;
     background: var(--pitch);
     overflow-x: hidden;
-    display: block !important; 
   }
 
   .app {
@@ -945,10 +940,9 @@ export default function App() {
     position: fixed;
     inset: 0;
     z-index: 0;
-    pointer-events: auto;
   }
 
-  /* CONTENEDOR PRINCIPAL: Centrado total */
+  /* CONTENEDOR PRINCIPAL CENTRADO */
   .ui-overlay {
     position: relative;
     z-index: 10;
@@ -956,70 +950,21 @@ export default function App() {
     width: 100%;
     display: flex;
     flex-direction: column;
-    align-items: center;    /* Centra horizontalmente */
-    justify-content: center; /* Centra verticalmente */
-    padding: 60px 20px;
+    align-items: center;    
+    justify-content: center; 
+    padding: 60px 40px;
     pointer-events: none;
   }
 
-  /* Permitir clicks en los elementos internos */
-  .ui-overlay > * {
-    pointer-events: auto;
-  }
+  .ui-overlay > * { pointer-events: auto; }
 
-  /* HERO STAGE: Centrado */
-  .hero-stage {
-    text-align: center;
-    width: 100%;
-    max-width: 800px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .main-title {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: clamp(4rem, 12vw, 8rem);
-    font-style: italic;
-    font-weight: 400;
-    letter-spacing: -0.03em;
-    margin-bottom: 1rem;
-    animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .hero-subtitle {
-    font-size: 0.95rem;
-    line-height: 1.6;
-    opacity: 0.88;
-    margin-bottom: 3rem;
-  }
-
-  .upload-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem 2.5rem;
-    border: 1px solid rgba(251,248,238,0.24);
-    cursor: pointer;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 0.1em;
-    transition: 0.35s;
-  }
-
-  .upload-trigger:hover {
-    background: var(--ivory);
-    color: var(--pitch);
-  }
-
-  /* EXPERIENCE GRID: Centrado y Responsivo */
+  /* GRID DE EXPERIENCIA (Diseño de tu captura) */
   .experience-grid {
     display: grid;
     grid-template-columns: 1fr 450px;
     width: 100%;
-    max-width: 1150px;
-    gap: 4rem;
+    max-width: 1100px;
+    gap: 5rem;
     align-items: center;
     margin: 0 auto;
   }
@@ -1033,47 +978,89 @@ export default function App() {
     overflow: hidden;
   }
 
-  .image-frame img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  /* ESTILOS DE TEXTO (Recuperando el estilo de la imagen) */
+  .small-cap {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    opacity: 0.6;
+    margin-bottom: 0.5rem;
   }
 
   .mood-name {
     font-family: 'Cormorant Garamond', serif;
     font-size: clamp(2.5rem, 5vw, 4rem);
     font-style: italic;
-    line-height: 1;
-    margin: 0.5rem 0 1rem;
+    line-height: 1.1;
+    margin-bottom: 1.5rem;
   }
 
   .quote {
     font-family: 'Cormorant Garamond', serif;
     font-size: 1.3rem;
     font-style: italic;
-    opacity: 0.92;
-    border-left: 1px solid rgba(251,248,238,0.30);
+    opacity: 0.9;
+    border-left: 1px solid rgba(251,248,238,0.2);
     padding-left: 20px;
-    margin-bottom: 1.1rem;
+    margin-bottom: 2rem;
   }
 
-  .eq-topo {
-    width: 100%;
-    height: 54px;
-    border-bottom: 1px solid rgba(251,248,238,0.12);
+  /* FILA DE METADATOS (Tempo y Textura alineados) */
+  .details {
+    display: flex;
+    gap: 4rem;
+    margin-bottom: 2rem;
+    align-items: flex-start;
   }
 
+  .detail-item {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Los números y nombres grandes de tu captura */
+  .detail-item .mood-name {
+    font-size: 2.5rem;
+    margin: 0;
+  }
+
+  .texture-line {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  /* DISEÑO DE LOS CÍRCULOS DE COLORES */
+  .palette-dots {
+    display: flex;
+    gap: 12px;
+    margin-top: 10px;
+  }
+
+  .dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(251,248,238,0.3);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  .dot:hover {
+    transform: scale(1.6);
+  }
+
+  /* BOTONES Y CONTROLES */
   .meta-controls {
     display: flex;
     align-items: center;
-    gap: 1.2rem;
-    margin-top: 1.5rem;
+    gap: 1.5rem;
+    margin-top: 2rem;
   }
 
   .main-btn {
     width: 80px;
     height: 80px;
-    border-radius: 999px;
+    border-radius: 50%;
     border: 1px solid var(--ivory);
     background: transparent;
     color: var(--ivory);
@@ -1081,49 +1068,21 @@ export default function App() {
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: 0.3s;
   }
 
-  .ghost-btn {
-    width: 68px;
-    height: 68px;
-    border-radius: 999px;
-    border: 1px solid rgba(251,248,238,0.16);
-    background: rgba(5,5,5,0.18);
-    color: var(--ivory);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(6px);
+  .main-btn:hover {
+    background: var(--ivory);
+    color: var(--pitch);
   }
 
-  /* MEDIA QUERIES: Corrección del salto visual */
-  @media (max-width: 1024px) {
+  /* MEDIA QUERIES PARA MÓVIL */
+  @media (max-width: 1000px) {
     .experience-grid {
       grid-template-columns: 1fr;
-      max-width: 600px;
-      gap: 2rem;
+      gap: 3rem;
     }
-    .ui-overlay {
-      padding: 40px 20px;
-    }
-  }
-
-  @media (max-width: 500px) {
-    .main-title { font-size: 3.5rem; }
-    .experience-grid { width: 100%; }
-    .image-frame { height: 30vh; }
-  }
-
-  @keyframes fade-in-up {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  @supports (padding: max(0px)) {
-    .ui-overlay {
-      padding-left: max(20px, env(safe-area-inset-left));
-      padding-right: max(20px, env(safe-area-inset-right));
-    }
+    .ui-overlay { padding: 40px 20px; }
   }
 `}</style>
     </div>
