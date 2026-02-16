@@ -1188,43 +1188,39 @@ position: fixed;
     to { opacity: 1; transform: translateY(0); }
   }
 
-  /* RESPONSIVE */
-/* --- CORRECCIÓN INDESTRUCTIBLE PARA MÓVIL --- */
 @media (max-width: 1000px) {
-  .ui-overlay {
-    padding: 20px !important;
-    align-items: center !important;
+  .experience-grid {
+    grid-template-columns: 1fr !important;  /* ← Solo imagen */
+    width: 100vw !important;                /* ← Ancho TOTAL de viewport */
+    max-width: 100vw !important;            /* ← NUNCA más */
+    margin: 0 !important;
+    padding: 0 20px !important;             /* ← Solo padding suave */
+    gap: 2rem !important;
   }
 
-  .experience-grid {
-    grid-template-columns: 1fr !important;
+  .panel {
+    order: -1;  /* ← Panel arriba, imagen abajo */
     width: 100% !important;
     max-width: 100% !important;
-    text-align: center !important;
-    gap: 2rem !important;
-    margin: 0 !important; /* Elimina cualquier desplazamiento */
   }
 
   .details {
-    justify-content: center !important; /* Centra los bloques de datos */
-    width: 100%;
-    gap: 2.5rem !important;
+    flex-direction: column !important;  /* ← Tempo y textura apilados */
+    gap: 1.5rem !important;
+    align-items: center !important;
   }
 
   .texture-line {
-    flex-direction: column !important; /* Apila textura y puntos si es necesario */
+    flex-direction: column !important;
+    align-items: center !important;
     gap: 1rem !important;
-  }
-
-  .palette-dots {
-    justify-content: center !important;
   }
 
   .meta-controls {
     justify-content: center !important;
-    width: 100%;
   }
 }
+
 `}</style>
 
 
