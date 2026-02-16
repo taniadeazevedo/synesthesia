@@ -944,14 +944,24 @@ export default function App() {
   position: relative;
   z-index: 10;
   min-height: 100vh;
-  width: 100%;             /* !!! Asegura que ocupe todo el ancho */
+  width: 100vw; /* Usa el ancho total de la ventana */
   display: flex;
-  align-items: center;     /* Centra verticalmente */
-  justify-content: center; /* !!! Fuerza el centrado horizontal de lo que haya dentro */
-  padding: 60px 20px;
+  flex-direction: column; 
+  align-items: center;    /* Centra horizontalmente */
+  justify-content: center; /* Centra verticalmente */
+  padding: 60px 40px;
   pointer-events: none;
+  left: 0;
+  right: 0;
 }
 
+/* Asegura que los hijos del overlay vuelvan a tener eventos de ratón */
+.ui-overlay > * {
+  pointer-events: auto;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
     
 
         /* HERO */
@@ -1045,13 +1055,16 @@ export default function App() {
         }
 
         /* EXPERIENCE */
-        .experience-grid {
-          display: grid;
-          grid-template-columns: 1fr 450px;
-          width: min(1100px, 92vw);
-          gap: clamp(2rem, 5vw, 5rem);
-          align-items: center;
-        }
+    .experience-grid {
+  display: grid;
+  grid-template-columns: 1fr 450px;
+  width: 100%;
+  max-width: 1100px; /* El límite lo ponemos aquí, no en el root */
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: center;
+  margin: 0 auto; /* Centrado perfecto */
+}
+
 .experience-grid {
 display: grid;
   grid-template-columns: 1fr 450px;
