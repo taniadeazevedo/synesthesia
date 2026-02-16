@@ -847,7 +847,7 @@ export default function App() {
       <img src={imageUrl} alt="Memory" />
       {isPlaying && (
         <div className="curtain">
-          <span style={{ opacity: 0.7 }}>Reproduciendo...</span>
+          <span style={{ opacity: 0.7 }}>Traduciendo el color...</span>
         </div>
       )}
     </div>
