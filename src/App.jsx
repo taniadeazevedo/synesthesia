@@ -33,68 +33,65 @@ function variance(arr) {
 // COLOR EXTRACTION - VERSIÓN CORREGIDA
 // ============================================================================
 async function extractColors(imageFile) {
-  return new Promise((resolve, reject) => {
-    // 🔸 VALIDACIÓN INICIAL
-    if (!imageFile || imageFile.size > 10 * 1024 * 1024) {
-      reject(new Error("Archivo muy grande o inválido (máx 10MB)"));
-      return;
-    }
+  // validación
+  if (!imageFile) throw new Error("Archivo inválido");
+  if (imageFile.size > 10 * 1024 * 1024) throw new Error("Archivo muy grande (máx 10MB)");
 
-    const img = new Image();
-    img.crossOrigin = "anonymous"; // 🔸 FIJA CORS ERROR
+  let bmp;
+  try {
+    bmp = await createImageBitmap(imageFile);
+  } catch (e) {
+    // suele pasar con HEIC o WEBP no soportado en el navegador
+    throw new Error("Formato no compatible en este navegador. Prueba JPG/PNG.");
+  }
 
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      img.onload = () => {
-        try {
-          // 🔸 VALIDAR DIMENSIONES
-          if (!img.width || !img.height) {
-            reject(new Error("Imagen sin dimensiones válidas"));
-            return;
-          }
+  const w = bmp.width, h = bmp.height;
+  if (!w || !h) throw new Error("Imagen sin dimensiones válidas");
 
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          
-          // 🔸 VALIDAR CANVAS
-          if (!ctx) {
-            reject(new Error("No se pudo crear canvas"));
-            return;
-          }
+  const maxSide = 320;
+  const scale = Math.min(maxSide / w, maxSide / h, 1); // nunca escales hacia arriba
+  const cw = Math.max(1, Math.round(w * scale));
+  const ch = Math.max(1, Math.round(h * scale));
 
-          const scale = Math.min(320 / img.width, 320 / img.height);
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-          
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-          const pixels = [];
-          
-          for (let i = 0; i < data.length; i += 32) {
-            if (data[i + 3] > 128) {
-              pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
-            }
-          }
-          
-          const centroids = pixels.slice(0, 5);
-          resolve({ colors: centroids.map((c) => rgbToHex(c.r, c.g, c.b)) });
-          
-        } catch (err) {
-          reject(new Error(`Error procesando imagen: ${err.message}`));
-        }
-      };
-      
-      // 🔸 MANEJO DE ERRORES IMG
-      img.onerror = () => reject(new Error("Error cargando imagen"));
-      img.src = e.target.result;
-    };
-    
-    // 🔸 MANEJO DE ERRORES READER
-    reader.onerror = () => reject(new Error("Error leyendo archivo"));
-    reader.readAsDataURL(imageFile);
-  });
+  const canvas = document.createElement("canvas");
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("No se pudo crear canvas");
+
+  ctx.drawImage(bmp, 0, 0, cw, ch);
+
+  let data;
+  try {
+    data = ctx.getImageData(0, 0, cw, ch).data;
+  } catch (e) {
+    throw new Error("No se pudo leer la imagen (canvas bloqueado).");
+  }
+
+  const pixels = [];
+  // muestreo ligero: 1 de cada 10 píxeles aprox
+  const step = 4 * 10; // RGBA * salto
+  for (let i = 0; i < data.length; i += step) {
+    const a = data[i + 3];
+    if (a > 128) pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
+  }
+
+  if (!pixels.length) throw new Error("No se encontraron píxeles válidos");
+
+  // “paleta” simple: coge 5 muestras repartidas
+  const colors = [];
+  const take = 5;
+  for (let k = 0; k < take; k++) {
+    const idx = Math.floor((k / (take - 1 || 1)) * (pixels.length - 1));
+    const p = pixels[idx];
+    colors.push(rgbToHex(p.r, p.g, p.b));
+  }
+
+  return { colors };
 }
+
+          
+        
 
 
 // ============================================================================
@@ -241,6 +238,54 @@ export default function App() {
   const sourceRef = useRef(null);
   const analyserRef = useRef(null);
 
+  useEffect(() => {
+  return () => {
+    try { sourceRef.current?.stop?.(); } catch {}
+    audioContextRef.current?.close?.();
+  };
+}, []);
+
+const stopPlayback = () => {
+  try { sourceRef.current?.stop?.(); } catch {}
+  sourceRef.current = null;
+  setIsPlaying(false);
+};
+
+const togglePlay = async () => {
+  if (!audioBuffer) return;
+
+  if (isPlaying) {
+    stopPlayback();
+    return;
+  }
+
+  let ac = audioContextRef.current;
+  if (!ac || ac.state === "closed") {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    audioContextRef.current = ac;
+  }
+
+  if (ac.state === "suspended") await ac.resume();
+
+  if (!analyserRef.current) {
+    const analyser = ac.createAnalyser();
+    analyser.fftSize = 2048;
+    analyserRef.current = analyser;
+  }
+
+  const src = ac.createBufferSource();
+  src.buffer = audioBuffer;
+  src.onended = () => setIsPlaying(false);
+
+  src.connect(analyserRef.current);
+  analyserRef.current.connect(ac.destination);
+
+  sourceRef.current = src;
+  src.start(0);
+  setIsPlaying(true);
+};
+
+
   const mood = useMemo(() => {
     if(!metrics) return "";
     if (metrics.lum < 0.36) return "nostálgica";
@@ -260,58 +305,32 @@ export default function App() {
 
   const bpm = useMemo(() => metrics ? Math.round(lerp(72, 105, metrics.sat)) : 0, [metrics]);
 const atmo = useMemo(() => {
-    const pools = {
-      íntima: ["Algo que vuelve sin avisar.", "Un sitio donde el mundo baja el volumen.", "Cerca, como si no hiciera falta decir nada."],
-      nostálgica: ["Un eco que se resiste a desaparecer.", "Lo que queda cuando el tiempo se detiene.", "Un brillo viejo en la esquina de la memoria."],
-      suspendida: ["Un instante congelado en el aire.", "La quietud que precede al recuerdo.", "Todo flota un segundo antes de caer."],
-      luminosa: ["La claridad que baña los momentos compartidos.", "Un rayo de sol atrapado en la memoria.", "La luz como una promesa pequeña."],
-    };
-    // Si no hay mood todavía, devolvemos un texto vacío o por defecto
-    return mood && pools[mood] ? pick(pools[mood]) : "Traduciendo esencia...";
-  }, [mood]);
-    return mood ? pick(pools[mood]) : "";
-  }, [mood]);
+  const pools = {
+    íntima: [
+      "Algo que vuelve sin avisar.",
+      "Un sitio donde el mundo baja el volumen.",
+      "Cerca, como si no hiciera falta decir nada."
+    ],
+    nostálgica: [
+      "Un eco que se resiste a desaparecer.",
+      "Lo que queda cuando el tiempo se detiene.",
+      "Un brillo viejo en la esquina de la memoria."
+    ],
+    suspendida: [
+      "Un instante congelado en el aire.",
+      "La quietud que precede al recuerdo.",
+      "Todo flota un segundo antes de caer."
+    ],
+    luminosa: [
+      "La claridad que baña los momentos compartidos.",
+      "Un rayo de sol atrapado en la memoria.",
+      "La luz como una promesa pequeña."
+    ],
+  };
 
-const handleUpload = async (file) => {
-  if (!file) return;
-  
-  console.log("📁 Subiendo:", file.name, file.size / 1024 / 1024 + "MB");
-  
-  try {
-    setStage("loading");
-    
-    // 🔸 CREAR URL ANTES
-    const url = URL.createObjectURL(file);
-    setImageUrl(url);
-    
-    console.log("🎨 Extrayendo colores...");
-    
-    // 🔸 ESPERAR EXPLÍCITAMENTE LOS COLORES
-    const result = await extractColors(file);
-    const { colors: c } = result;
-    console.log("✅ Colores encontrados:", c);
-    
-    // 🔸 CALCULAR MÉTRICAS
-    const m = { ...deriveColorMetrics(c), colors: c };
-    console.log("📊 Métricas:", m);
-    
-    // 🔸 GENERAR MÚSICA
-    console.log("🎵 Generando música...");
-    const buffer = await generateMusic(m);
-    console.log("✅ Música generada");
-    
-    // 🔸 GUARDAR ESTADO
-    setColors(c);
-    setMetrics(m);
-    setAudioBuffer(buffer);
-    setStage("experience");
-    
-  } catch (err) {
-    console.error("❌ ERROR DETALLADO:", err);
-    setStage("hero");
-    alert("Error procesando imagen: " + err.message);
-  }
-};
+  return mood && pools[mood] ? pick(pools[mood]) : "Traduciendo esencia...";
+}, [mood]);
+
 
 
 // 🔸 MOVER deriveColorMetrics FUERA del handleUpload
