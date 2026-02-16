@@ -327,18 +327,66 @@ export default function App() {
         .spinner { width: 40px; height: 40px; border: 3px solid rgba(251,248,238,0.1); border-top-color: var(--ivory); border-radius: 50%; animation: s 1s linear infinite; margin: 0 auto; }
         @keyframes s { to { transform: rotate(360deg); } }
 
-        @media (max-width: 900px) {
-          .ui-overlay { padding: 1rem; align-items: flex-start; justify-content: flex-start; }
-          .hero-stage { justify-content: center; height: 100%; padding-top: 12vh; }
-          .experience-grid { grid-template-columns: 1fr; gap: 1rem; text-align: center; }
-          .image-frame { height: 18vh; width: 75%; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-          .panel { align-items: center; gap: 0.8rem; }
-          .quote { border-left: none; border-top: 1px solid rgba(251,248,238,0.1); padding: 1rem 0 0; font-size: 1.3rem; }
-          .details-row { gap: 2rem; justify-content: center; width: 100%; }
-          .controls { gap: 1.5rem; justify-content: center; padding-bottom: 2rem; }
-          .main-mood { font-size: 2.8rem; }
-          .val { font-size: 1.8rem; }
-        }
+@media (max-width: 900px) {
+  /* Contenedor general: ahora centra el contenido verticalmente */
+  .ui-overlay { 
+    padding: 1rem; 
+    align-items: center; 
+    justify-content: center; 
+    display: flex;
+  }
+  
+  /* HOME: Centrado perfecto usando la altura dinámica del visor */
+  .hero-stage { 
+    justify-content: center; 
+    height: 100dvh; 
+    padding-top: 0; 
+    margin-top: -2rem; /* Sutil ajuste para compensar el peso visual del título */
+  }
+
+  /* PANTALLA FOTO: Menos relleno arriba y espacio compacto */
+  .experience-grid { 
+    grid-template-columns: 1fr; 
+    gap: 1rem; 
+    text-align: center; 
+    margin-top: -3rem; /* Subimos todo el bloque para aprovechar la pantalla */
+  }
+
+  .image-frame { 
+    height: 20vh; /* Tamaño ideal para dejar ver los botones sin scroll */
+    width: 70%; 
+    margin: 0 auto; 
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+  }
+
+  .panel { 
+    align-items: center; 
+    gap: 0.5rem; /* Espacio más estrecho entre elementos */
+  }
+
+  .quote { 
+    border-left: none; 
+    border-top: 1px solid rgba(251,248,238,0.1); 
+    padding: 0.8rem 0 0; 
+    font-size: 1.2rem; 
+    margin-bottom: 0.5rem;
+  }
+
+  .details-row { 
+    gap: 1.5rem; 
+    justify-content: center; 
+    width: 100%; 
+  }
+
+  .controls { 
+    gap: 1.2rem; 
+    justify-content: center; 
+    padding-bottom: 1rem; 
+  }
+
+  .main-mood { font-size: 2.5rem; }
+  .val { font-size: 1.6rem; }
+}
       `}</style>
     </div>
   );
