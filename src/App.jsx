@@ -1033,7 +1033,7 @@ export default function App() {
 
   .mood-name {
     font-family: 'Cormorant Garamond', serif;
-    font-size: clamp(2.5rem, 5vw, 4rem);
+    font-size: clamp(2.1rem, 5vw, 4rem);
     font-style: italic;
     line-height: 1;
     margin: 0.5rem 0 1rem;
