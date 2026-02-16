@@ -1053,6 +1053,19 @@ export default function App() {
           gap: clamp(2rem, 5vw, 5rem);
           align-items: center;
         }
+.experience-grid {
+  display: grid;
+  grid-template-columns: 1fr 450px;
+  width: min(1100px, 92vw);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: center;
+  margin: 0 auto; /* <--- ESTO centra el diseño en pantallas grandes */
+}
+.hero-stage {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto; /* <--- Asegura que el hero no se pegue a la izquierda */
+}
 
         .image-frame {
           position: relative;
@@ -1302,6 +1315,17 @@ export default function App() {
           .ui-overlay {
             padding: 40px 15px;
           }
+          .ui-overlay {
+  position: relative;
+  z-index: 10;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column; /* Cambiado de align-items: center para mejor control */
+  justify-content: center;
+  padding: 60px 40px;
+  pointer-events: none;
+  width: 100%; /* Asegura que ocupe todo el ancho */
+}
           .mood-name {
             font-size: 3rem;
           }
