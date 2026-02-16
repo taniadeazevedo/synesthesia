@@ -867,36 +867,38 @@ Busca y reemplaza estas partes exactas:
 
 JavaScript
 {/* 1. Cambia la etiqueta de Frecuencias */}
+{/* --- SECCIÓN DE FRECUENCIAS --- */}
 <div className="eq-wrapper">
-  <div className="small-cap">Frecuencias</div> {/* Cambiado de label-tiny a small-cap */}
+  <div className="small-cap">Frecuencias</div> {/* Cambiado label-tiny por small-cap */}
   <EQTopography analyser={analyserRef.current} isPlaying={isPlaying} />
 </div>
 
-{/* 2. Cambia el tamaño del Tempo (88) */}
-<div className="detail-item">
-  <div className="small-cap">Tempo</div>
-  <div className="mood-name" style={{ fontSize: "1.5rem", margin: 0 }}> {/* Bajado a 1.5rem */}
-    {bpm}
-  </div>
-</div>
-
-{/* 3. Cambia el tamaño de la Textura (Prismática) */}
-<div className="detail-item texture-line">
-  <div>
-    <div className="small-cap">Textura</div>
-    <div className="mood-name" style={{ fontSize: "1.5rem", margin: 0 }}> {/* Bajado a 1.5rem */}
-      {textura}
+<div className="meta-row">
+  <div className="details">
+    <div className="detail-item">
+      <div className="small-cap">Tempo</div>
+      {/* CAMBIO: fontSize bajado a 1.4rem y añadido !important */}
+      <div className="mood-name" style={{ fontSize: "1.4rem !important", margin: 0 }}>
+        {bpm}
+      </div>
     </div>
-  </div>
-  
-            <div className="palette-dots">
-              {colors.map((c, i) => (
-                <div key={i} className="dot" style={{ backgroundColor: c }} />
-              ))}
-            </div>
-          </div>
+
+    <div className="detail-item texture-line">
+      <div>
+        <div className="small-cap">Textura</div>
+        {/* CAMBIO: fontSize bajado a 1.4rem y añadido !important */}
+        <div className="mood-name" style={{ fontSize: "1.4rem !important", margin: 0 }}>
+          {textura}
         </div>
       </div>
+      <div className="palette-dots">
+        {colors.map((c, i) => (
+          <div key={i} className="dot" style={{ backgroundColor: c }} />
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
 
       <div className="meta-controls">
         <button onClick={handlePlayPause} className={`main-btn ${isPlaying ? 'is-playing' : ''}`} disabled={!audioBuffer}>
@@ -1035,12 +1037,14 @@ position: fixed;
   }
 
   /* PANEL INFO */
-  .small-cap {
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.25em;
-    opacity: 0.62;
-  }
+.small-cap {
+          font-size: 0.55rem !important;
+          text-transform: uppercase;
+          letter-spacing: 0.25em;
+          opacity: 0.62;
+          margin-bottom: 6px;
+          display: block;
+        }
 
   .mood-name {
     font-family: 'Cormorant Garamond', serif;
@@ -1193,24 +1197,42 @@ position: fixed;
   }
 
   /* RESPONSIVE */
+/* --- CORRECCIÓN INDESTRUCTIBLE PARA MÓVIL --- */
 @media (max-width: 1000px) {
-  .experience-grid { 
-    grid-template-columns: 1fr; 
-    gap: 1.5rem; 
-    width: 100%; 
-    text-align: center; /* Centra los textos en móvil */
+  .ui-overlay {
+    padding: 20px !important;
+    align-items: center !important;
   }
+
+  .experience-grid {
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    text-align: center !important;
+    gap: 2rem !important;
+    margin: 0 !important; /* Elimina cualquier desplazamiento */
+  }
+
+  .details {
+    justify-content: center !important; /* Centra los bloques de datos */
+    width: 100%;
+    gap: 2.5rem !important;
+  }
+
+  .texture-line {
+    flex-direction: column !important; /* Apila textura y puntos si es necesario */
+    gap: 1rem !important;
+  }
+
   .palette-dots {
-    justify-content: center; /* Centra los círculos en móvil */
+    justify-content: center !important;
   }
+
   .meta-controls {
-    justify-content: center; /* Centra los botones en móvil */
+    justify-content: center !important;
+    width: 100%;
   }
-  
-  @media (max-width: 1000px) {
-    .experience-grid { grid-template-columns: 1fr; gap: 1.5rem; }
-    .image-frame { height: 35vh; }
-  }
+}
 `}</style>
 
 
