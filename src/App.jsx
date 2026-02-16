@@ -857,27 +857,38 @@ export default function App() {
       <div className="mood-name">{mood}</div>
       <div className="quote">{atmo}</div>
 
-      <div className="eq-wrapper">
-        <div className="label-tiny">Frecuencias</div>
-        <EQTopography analyser={analyserRef.current} isPlaying={isPlaying} />
-      </div>
+Gemini said
+Para que el título de "Frecuencias" tenga el mismo estilo visual coherente que "Tempo" y "Textura", y para solucionar los problemas de tamaño y centrado en móvil de una vez por todas, debes realizar estos ajustes quirúrgicos en tu código:
 
-      <div className="meta-row">
-        <div className="details">
-          <div className="detail-item">
-            <div className="small-cap">Tempo</div>
-            <div className="mood-name" style={{ fontSize: "1.6rem", margin: 0 }}>
-              {bpm}
-            </div>
-          </div>
+1. El cambio en el HTML (JSX)
+Busca la sección donde aparece el ecualizador. Vamos a cambiar la etiqueta de "Frecuencias" para que use la clase .small-cap y vamos a reducir el tamaño de los números directamente en las etiquetas de React (que es lo que te estaba bloqueando el cambio).
 
-          <div className="detail-item texture-line">
-            <div>
-              <div className="small-cap">Textura</div>
-              <div className="mood-name" style={{ fontSize: "1.6rem", margin: 0 }}>
-                {textura}
-              </div>
-            </div>
+Busca y reemplaza estas partes exactas:
+
+JavaScript
+{/* 1. Cambia la etiqueta de Frecuencias */}
+<div className="eq-wrapper">
+  <div className="small-cap">Frecuencias</div> {/* Cambiado de label-tiny a small-cap */}
+  <EQTopography analyser={analyserRef.current} isPlaying={isPlaying} />
+</div>
+
+{/* 2. Cambia el tamaño del Tempo (88) */}
+<div className="detail-item">
+  <div className="small-cap">Tempo</div>
+  <div className="mood-name" style={{ fontSize: "1.5rem", margin: 0 }}> {/* Bajado a 1.5rem */}
+    {bpm}
+  </div>
+</div>
+
+{/* 3. Cambia el tamaño de la Textura (Prismática) */}
+<div className="detail-item texture-line">
+  <div>
+    <div className="small-cap">Textura</div>
+    <div className="mood-name" style={{ fontSize: "1.5rem", margin: 0 }}> {/* Bajado a 1.5rem */}
+      {textura}
+    </div>
+  </div>
+  
             <div className="palette-dots">
               {colors.map((c, i) => (
                 <div key={i} className="dot" style={{ backgroundColor: c }} />
@@ -946,17 +957,17 @@ export default function App() {
 
   /* UI OVERLAY CENTRADO */
   .ui-overlay {
-    position: relative;
-    z-index: 10;
-    min-height: 100vh;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;    
-    justify-content: center; 
-    padding: 60px 40px;
-    pointer-events: none;
-  }
+position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  overflow-y: auto;
+  padding: 20px; /* Reducimos el padding lateral */
+  width: 100%;   /* Forzamos ancho total */
+}
 
   .ui-overlay > * { pointer-events: auto; }
 
@@ -1182,6 +1193,20 @@ export default function App() {
   }
 
   /* RESPONSIVE */
+@media (max-width: 1000px) {
+  .experience-grid { 
+    grid-template-columns: 1fr; 
+    gap: 1.5rem; 
+    width: 100%; 
+    text-align: center; /* Centra los textos en móvil */
+  }
+  .palette-dots {
+    justify-content: center; /* Centra los círculos en móvil */
+  }
+  .meta-controls {
+    justify-content: center; /* Centra los botones en móvil */
+  }
+  
   @media (max-width: 1000px) {
     .experience-grid { grid-template-columns: 1fr; gap: 1.5rem; }
     .image-frame { height: 35vh; }
