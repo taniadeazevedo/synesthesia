@@ -921,49 +921,53 @@ export default function App() {
     --ivory: #fbf8ee;
   }
 
-  /* RESET TOTAL: Forzamos a que nada externo mueva la app */
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  html, body, #root {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: var(--pitch);
-    overflow-x: hidden;
-    display: block !important; 
-  }
-
-  .app {
-    position: relative;
-    width: 100%;
-    min-height: 100vh;
-    color: var(--ivory);
-    font-family: 'Inter', sans-serif;
-  }
-
-  .spline-viewport {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: auto;
-  }
-
-  /* UI OVERLAY CENTRADO */
-  .ui-overlay {
-position: fixed;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  overflow-y: auto;
-  padding: 20px; /* Reducimos el padding lateral */
-  width: 100%;   /* Forzamos ancho total */
+* { 
+  margin: 0 !important; 
+  padding: 0 !important; 
+  box-sizing: border-box !important; 
 }
 
-  .ui-overlay > * { pointer-events: auto; }
+html, body, #root {
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: var(--pitch) !important;
+  overflow-x: hidden !important;
+}
+
+.app {
+  position: relative !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  color: var(--ivory) !important;
+}
+
+.spline-viewport {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+}
+
+.ui-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  padding: 1rem !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  box-sizing: border-box !important;
+}
+
+.ui-overlay > * { 
+  pointer-events: auto !important; 
+  max-width: 100% !important; 
+}
+
 
   /* HERO */
   .hero-stage {
@@ -985,17 +989,15 @@ position: fixed;
     animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* EXPERIENCE GRID (Diseño Recuperado) */
-  .experience-grid {
-    display: grid;
-    grid-template-columns: 1fr 450px;
-    width: 100%;
-    max-width: 1100px;
-    gap: clamp(2rem, 5vw, 5rem);
-    align-items: center;
-    margin: 0 auto;
-  }
-
+.experience-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  width: 100% !important;
+  max-width: 1200px !important;
+  gap: 4rem !important;
+  align-items: center !important;
+  margin: 0 auto !important;
+}
   .image-frame {
     position: relative;
     width: 100%;
@@ -1027,7 +1029,10 @@ position: fixed;
     font-size: 1.5rem;
     letter-spacing: -0.01em;
   }
-
+.panel {
+  width: 100% !important;
+  max-width: 450px !important;
+}
   /* PANEL INFO */
 .small-cap {
           font-size: 0.55rem !important;
@@ -1188,34 +1193,51 @@ position: fixed;
     to { opacity: 1; transform: translateY(0); }
   }
 
-@media (max-width: 1000px) {
+@media (max-width: 900px) {
+  .ui-overlay {
+    padding: 1rem !important;
+  }
+  
   .experience-grid {
-    grid-template-columns: 1fr !important;  /* ← Solo imagen */
-    width: 100vw !important;                /* ← Ancho TOTAL de viewport */
-    max-width: 100vw !important;            /* ← NUNCA más */
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
     margin: 0 !important;
-    padding: 0 20px !important;             /* ← Solo padding suave */
+    padding: 0 !important;
     gap: 2rem !important;
+    box-sizing: border-box !important;
   }
-
+  
   .panel {
-    order: -1;  /* ← Panel arriba, imagen abajo */
-    width: 100% !important;
-    max-width: 100% !important;
+    order: -1 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    padding: 0 1rem !important;
+    margin: 0 !important;
   }
-
+  
+  .image-frame {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 50vh !important;
+    min-height: 300px !important;
+    margin: 0 !important;
+  }
+  
   .details {
-    flex-direction: column !important;  /* ← Tempo y textura apilados */
-    gap: 1.5rem !important;
+    flex-direction: column !important;
+    gap: 2rem !important;
     align-items: center !important;
+    justify-content: center !important;
   }
-
+  
   .texture-line {
     flex-direction: column !important;
     align-items: center !important;
     gap: 1rem !important;
   }
-
+  
   .meta-controls {
     justify-content: center !important;
   }
