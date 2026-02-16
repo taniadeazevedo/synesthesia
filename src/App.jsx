@@ -1130,7 +1130,7 @@ export default function App() {
 
 /* Esto controla directamente el tamaño de los valores numéricos y nombres de textura */
 .detail-item .mood-name {
-  font-size: 2.1rem !important; /* Baja este número (ej: 1.8rem) si lo quieres aún más pequeño */
+  font-size: 2.1rem !important; /* Baja este número (ej: 1.2rem) si lo quieres aún más pequeño */
   margin: 0 !important;
 }
 
