@@ -30,30 +30,72 @@ function variance(arr) {
 }
 
 // ============================================================================
-// COLOR EXTRACTION
+// COLOR EXTRACTION - VERSIÓN CORREGIDA
 // ============================================================================
 async function extractColors(imageFile) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // 🔸 VALIDACIÓN INICIAL
+    if (!imageFile || imageFile.size > 10 * 1024 * 1024) {
+      reject(new Error("Archivo muy grande o inválido (máx 10MB)"));
+      return;
+    }
+
     const img = new Image();
+    img.crossOrigin = "anonymous"; // 🔸 FIJA CORS ERROR
+
     const reader = new FileReader();
+    
     reader.onload = (e) => {
       img.onload = () => {
-        const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
-        const scale = Math.min(320 / img.width, 320 / img.height);
-        canvas.width = img.width * scale; canvas.height = img.height * scale;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data, pixels = [];
-        for (let i = 0; i < data.length; i += 32) {
-          if (data[i + 3] > 128) pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
+        try {
+          // 🔸 VALIDAR DIMENSIONES
+          if (!img.width || !img.height) {
+            reject(new Error("Imagen sin dimensiones válidas"));
+            return;
+          }
+
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          
+          // 🔸 VALIDAR CANVAS
+          if (!ctx) {
+            reject(new Error("No se pudo crear canvas"));
+            return;
+          }
+
+          const scale = Math.min(320 / img.width, 320 / img.height);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          const pixels = [];
+          
+          for (let i = 0; i < data.length; i += 32) {
+            if (data[i + 3] > 128) {
+              pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
+            }
+          }
+          
+          const centroids = pixels.slice(0, 5);
+          resolve({ colors: centroids.map((c) => rgbToHex(c.r, c.g, c.b)) });
+          
+        } catch (err) {
+          reject(new Error(`Error procesando imagen: ${err.message}`));
         }
-        const centroids = pixels.slice(0, 5); 
-        resolve({ colors: centroids.map((c) => rgbToHex(c.r, c.g, c.b)) });
       };
+      
+      // 🔸 MANEJO DE ERRORES IMG
+      img.onerror = () => reject(new Error("Error cargando imagen"));
       img.src = e.target.result;
     };
+    
+    // 🔸 MANEJO DE ERRORES READER
+    reader.onerror = () => reject(new Error("Error leyendo archivo"));
     reader.readAsDataURL(imageFile);
   });
 }
+
 
 // ============================================================================
 // AUDIO GENERATION (RECUPERADA COMPLETA)
@@ -231,8 +273,9 @@ const atmo = useMemo(() => {
   }, [mood]);
 
 const handleUpload = async (file) => {
-    if (!file) return;
-    try {
+  if (!file) return;
+  console.log("Archivo:", file.name);  // ← AGREGAR ESTA LÍNEA
+  try {
       setStage("loading");
       const url = URL.createObjectURL(file);
       setImageUrl(url);
@@ -280,20 +323,31 @@ const handleUpload = async (file) => {
     }
   };
 
-  return (
-    <div className="app">
-      <SplineBackground />
-      <div className="ui-overlay">
-        {stage === "hero" && (
-          <div className="hero-stage">
-            <h1 className="main-title">Synesthesia</h1>
-            <p className="hero-subtitle">Donde cada imagen tiene su propia música</p>
-            <div className="home-spacer" />
-            <input type="file" id="u" accept="image/*" onChange={e => handleUpload(e.target.files[0])} style={{ display: "none" }} />
-            <label htmlFor="u" className="upload-trigger"><Upload size={20} /><span>Entrega una memoria</span></label>
-            <div className="upload-specs">JPG · PNG · WEBP | Máximo 10MB</div>
-          </div>
-        )}
+return (
+  <div className="app">
+    <SplineBackground />
+    <div className="ui-overlay">
+      {stage === "hero" && (
+        <div className="hero-stage">
+          <h1 className="main-title">Synesthesia</h1>
+          <p className="hero-subtitle">Donde cada imagen tiene su propia música</p>
+          <div className="home-spacer" />
+          {/* 🔧 CORREGIDO: Formatos específicos + ID único */}
+          <input 
+            type="file" 
+            id="imageUpload" 
+            accept="image/jpeg,image/png,image/webp" 
+            onChange={e => handleUpload(e.target.files[0])} 
+            style={{ display: "none" }} 
+          />
+          <label htmlFor="imageUpload" className="upload-trigger">
+            <Upload size={20} />
+            <span>Entrega una memoria</span>
+          </label>
+          <div className="upload-specs">JPG · PNG · WEBP | Máximo 10MB</div>
+        </div>
+      )}
+
 
         {stage === "loading" && <div className="loading-stage"><div className="spinner" /></div>}
 
