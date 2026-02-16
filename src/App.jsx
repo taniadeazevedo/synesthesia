@@ -1088,7 +1088,44 @@ export default function App() {
     gap: 1.2rem;
     margin-top: 1.5rem;
   }
+/* BOTÓN DE LA HOME: "Entrega una memoria" */
+.upload-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem 2.5rem;
+  border: 1px solid rgba(251,248,238,0.24);
+  background: transparent;
+  color: var(--ivory);
+  cursor: pointer;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  border-radius: 4px; /* Un ligero redondeado para que no sea totalmente cuadrado */
+  margin-top: 1rem;
+  animation: fade-in-up 0.8s 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
 
+.upload-trigger:hover {
+  background: var(--ivory);
+  color: var(--pitch);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  border-color: var(--ivory);
+}
+
+/* El texto que aparece debajo del botón de la Home */
+.upload-specs {
+  margin-top: 15px;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  opacity: 0.5;
+  text-transform: uppercase;
+  text-align: center;
+}
   .main-btn {
     width: 80px;
     height: 80px;
