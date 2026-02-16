@@ -940,20 +940,19 @@ export default function App() {
           pointer-events: auto;
         }
 
-        .ui-overlay {
-          position: relative;
-          z-index: 10;
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 60px 40px;
-          pointer-events: none;
-        }
+.ui-overlay {
+  position: relative;
+  z-index: 10;
+  min-height: 100vh;
+  width: 100%;             /* !!! Asegura que ocupe todo el ancho */
+  display: flex;
+  align-items: center;     /* Centra verticalmente */
+  justify-content: center; /* !!! Fuerza el centrado horizontal de lo que haya dentro */
+  padding: 60px 20px;
+  pointer-events: none;
+}
 
-        .ui-overlay > * {
-          pointer-events: auto;
-        }
+    
 
         /* HERO */
         .hero-stage {
@@ -1054,19 +1053,25 @@ export default function App() {
           align-items: center;
         }
 .experience-grid {
-  display: grid;
+display: grid;
   grid-template-columns: 1fr 450px;
-  width: min(1100px, 92vw);
+  width: 100%;             /* !!! Cambiado de 'min' a 100% para que el max-width mande */
+  max-width: 1100px;       /* El ancho máximo que permitimos */
   gap: clamp(2rem, 5vw, 5rem);
   align-items: center;
-  margin: 0 auto; /* <--- ESTO centra el diseño en pantallas grandes */
-}
-.hero-stage {
-  text-align: center;
-  max-width: 600px;
-  margin: 0 auto; /* <--- Asegura que el hero no se pegue a la izquierda */
+  margin: 0 auto;          /* !!! Centra el bloque dentro del espacio de flex */
+  pointer-events: auto;
 }
 
+.hero-stage {
+  text-align: center;
+  width: 100%;             /* !!! Asegura que ocupe el ancho para poder centrar el texto */
+  max-width: 600px;
+  margin: 0 auto;          /* !!! Centra el bloque */
+  display: flex;           /* !!! Añadido para asegurar alineación interna */
+  flex-direction: column;
+  align-items: center;
+}
         .image-frame {
           position: relative;
           width: 100%;
