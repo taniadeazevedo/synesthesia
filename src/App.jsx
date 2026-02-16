@@ -866,7 +866,7 @@ export default function App() {
         <div className="details">
           <div className="detail-item">
             <div className="small-cap">Tempo</div>
-            <div className="mood-name" style={{ fontSize: "2.5rem", margin: 0 }}>
+            <div className="mood-name" style={{ fontSize: "1.6rem", margin: 0 }}>
               {bpm}
             </div>
           </div>
@@ -874,7 +874,7 @@ export default function App() {
           <div className="detail-item texture-line">
             <div>
               <div className="small-cap">Textura</div>
-              <div className="mood-name" style={{ fontSize: "2.5rem", margin: 0 }}>
+              <div className="mood-name" style={{ fontSize: "1.6rem", margin: 0 }}>
                 {textura}
               </div>
             </div>
