@@ -838,72 +838,72 @@ export default function App() {
           </div>
         )}
 
-        {stage === "experience" && (
-          <div className="experience-grid">
-            <div className="image-frame">
-              {isPlaying && <ParticlesCanvas colors={colors} isPlaying={isPlaying} volumeEnergy={volumeRef.current} />}
-              <img src={imageUrl} alt="Memory" />
-              {isPlaying && (
-                <div className="curtain">
-                  <span style={{ opacity: 0.7 }}>Reproduciendo...</span>
-                </div>
-              )}
-            </div>
 
-            <div className="panel">
-              <div className="small-cap">Textura</div>
-              <div className="mood-name">{mood}</div>
-              <div className="quote">{atmo}</div>
+        
+{stage === "experience" && (
+  <div className="experience-grid">
+    <div className="image-frame">
+      {isPlaying && <ParticlesCanvas colors={colors} isPlaying={isPlaying} volumeEnergy={volumeRef.current} />}
+      <img src={imageUrl} alt="Memory" />
+      {isPlaying && (
+        <div className="curtain">
+          <span style={{ opacity: 0.7 }}>Reproduciendo...</span>
+        </div>
+      )}
+    </div>
 
-              <div className="eq-wrapper">
-                <div className="label-tiny">Frecuencias</div>
-                <EQTopography analyser={analyserRef.current} isPlaying={isPlaying} />
-              </div>
+    <div className="panel">
+      <div className="small-cap">Textura</div>
+      <div className="mood-name">{mood}</div>
+      <div className="quote">{atmo}</div>
 
-              <div className="meta-row">
-                <div className="details">
-                  <div className="detail-item">
-                    <div className="small-cap">Tempo</div>
-                    <div className="mood-name" style={{ fontSize: "1.8rem", margin: 0 }}>
-                      {bpm}
-                    </div>
-                  </div>
+      <div className="eq-wrapper">
+        <div className="label-tiny">Frecuencias</div>
+        <EQTopography analyser={analyserRef.current} isPlaying={isPlaying} />
+      </div>
 
-                  <div className="detail-item texture-line">
-                    <div>
-                      <div className="small-cap">Textura</div>
-                      <div className="mood-name" style={{ fontSize: "1.8rem", margin: 0 }}>
-                        {textura}
-                      </div>
-                    </div>
-                    <div className="palette-dots">
-                      {colors.map((c, i) => (
-                        <div key={i} className="dot" style={{ backgroundColor: c }} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="meta-controls">
-                <button onClick={handlePlayPause} className={`main-btn ${isPlaying ? 'is-playing' : ''}`} disabled={!audioBuffer}>
-                  {isPlaying ? <Pause size={22} /> : <Play size={22} />}
-                </button>
-                <button onClick={handleDownload} className="ghost-btn" title="Descargar WAV" disabled={!audioBuffer}>
-                  <Download size={20} />
-                </button>
-                <button onClick={handleShare} className="ghost-btn" title="Compartir">
-                  <Share2 size={20} />
-                </button>
-                <button onClick={handleReset} className="ghost-btn" title="Nueva imagen">
-                  <RefreshCw size={20} />
-                </button>
-              </div>
-
-              {error && <div className="panel-error">{error}</div>}
+      <div className="meta-row">
+        <div className="details">
+          <div className="detail-item">
+            <div className="small-cap">Tempo</div>
+            <div className="mood-name" style={{ fontSize: "2.5rem", margin: 0 }}>
+              {bpm}
             </div>
           </div>
-        )}
+
+          <div className="detail-item texture-line">
+            <div>
+              <div className="small-cap">Textura</div>
+              <div className="mood-name" style={{ fontSize: "2.5rem", margin: 0 }}>
+                {textura}
+              </div>
+            </div>
+            <div className="palette-dots">
+              {colors.map((c, i) => (
+                <div key={i} className="dot" style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="meta-controls">
+        <button onClick={handlePlayPause} className={`main-btn ${isPlaying ? 'is-playing' : ''}`} disabled={!audioBuffer}>
+          {isPlaying ? <Pause size={22} /> : <Play size={22} />}
+        </button>
+        <button onClick={handleDownload} className="ghost-btn" title="Descargar WAV" disabled={!audioBuffer}>
+          <Download size={20} />
+        </button>
+        <button onClick={handleShare} className="ghost-btn" title="Compartir">
+          <Share2 size={20} />
+        </button>
+        <button onClick={handleReset} className="ghost-btn" title="Nueva imagen">
+          <RefreshCw size={20} />
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       </div>
 
       {toast && <div className="toast">{toast}</div>}
