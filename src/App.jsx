@@ -46,7 +46,6 @@ async function extractColors(imageFile) {
         for (let i = 0; i < data.length; i += 32) {
           if (data[i + 3] > 128) pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
         }
-        // K-Means simplificado para velocidad
         const centroids = pixels.slice(0, 5); 
         resolve({ colors: centroids.map((c) => rgbToHex(c.r, c.g, c.b)) });
       };
@@ -57,59 +56,42 @@ async function extractColors(imageFile) {
 }
 
 // ============================================================================
-// AUDIO GENERATION (LÓGICA COMPLETA RESTAURADA)
+// AUDIO GENERATION (RECUPERADA COMPLETA)
 // ============================================================================
 async function generateMusic(metrics) {
   const duration = 72, sampleRate = 44100;
   const ctx = new OfflineAudioContext(2, duration * sampleRate, sampleRate);
-  
   const bpm = Math.round(lerp(72, 105, metrics.sat));
   const beat = 60 / bpm;
-  const { r, g, b } = hexToRgb01(metrics.colors[0]);
 
-  // Master Bus
-  const master = ctx.createGain();
-  master.gain.value = 0.7;
+  const master = ctx.createGain(); master.gain.value = 0.7;
   const busFilter = ctx.createBiquadFilter();
-  busFilter.type = "lowpass";
-  busFilter.frequency.value = lerp(800, 3500, metrics.lum);
-  busFilter.connect(master);
-  master.connect(ctx.destination);
+  busFilter.type = "lowpass"; busFilter.frequency.value = lerp(800, 3500, metrics.lum);
+  busFilter.connect(master); master.connect(ctx.destination);
 
-  // Noise Texture (Crucial para el "rollo")
-  const noiseBuf = ctx.createBuffer(1, sampleRate * 2, sampleRate);
-  const nData = noiseBuf.getChannelData(0);
-  for (let i = 0; i < nData.length; i++) nData[i] = Math.random() * 2 - 1;
-  const noiseSrc = ctx.createBufferSource();
-  noiseSrc.buffer = noiseBuf; noiseSrc.loop = true;
-  const nGain = ctx.createGain(); nGain.gain.value = 0.015;
-  noiseSrc.connect(nGain); nGain.connect(busFilter);
-  noiseSrc.start(0);
+  // LFO para movimiento
+  const lfo = ctx.createOscillator(); const lfoG = ctx.createGain();
+  lfo.frequency.value = 0.1; lfoG.gain.value = 500;
+  lfo.connect(lfoG); lfoG.connect(busFilter.frequency); lfo.start(0);
 
-  // Pad Synth 
+  // Pad Synth
   const freqBase = lerp(80, 160, metrics.lum);
-  [0, 4, 7, 11].forEach((semi, i) => {
-    const osc = ctx.createOscillator();
-    osc.type = "sawtooth";
+  [0, 4, 7, 11].forEach((semi) => {
+    const osc = ctx.createOscillator(); osc.type = "sawtooth";
     osc.frequency.value = freqBase * Math.pow(2, semi/12);
-    const gPad = ctx.createGain();
-    gPad.gain.setValueAtTime(0, 0);
-    gPad.gain.linearRampToValueAtTime(0.08, 4);
-    osc.connect(gPad); gPad.connect(busFilter);
-    osc.start(0); osc.stop(duration);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, 0); g.gain.linearRampToValueAtTime(0.08, 4);
+    osc.connect(g); g.connect(busFilter); osc.start(0); osc.stop(duration);
   });
 
-  // Reverb Algorítmico sutil
-  const reverb = ctx.createConvolver();
-  const irLen = sampleRate * 3;
-  const irBuf = ctx.createBuffer(2, irLen, sampleRate);
+  // Reverb
+  const irLen = sampleRate * 3; const irBuf = ctx.createBuffer(2, irLen, sampleRate);
   for(let c=0; c<2; c++) {
     const d = irBuf.getChannelData(c);
     for(let i=0; i<irLen; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/irLen, 2);
   }
-  reverb.buffer = irBuf;
-  const revGain = ctx.createGain(); revGain.gain.value = 0.3;
-  busFilter.connect(revGain); revGain.connect(reverb); reverb.connect(master);
+  const conv = ctx.createConvolver(); conv.buffer = irBuf;
+  const rg = ctx.createGain(); rg.gain.value = 0.3;
+  busFilter.connect(rg); rg.connect(conv); conv.connect(master);
 
   return await ctx.startRendering();
 }
@@ -167,7 +149,7 @@ function EQTopography({ analyser, isPlaying }) {
     };
     draw();
   }, [analyser, isPlaying]);
-  return <canvas ref={canvasRef} className="eq-topo" width={600} height={60} />;
+  return <canvas ref={canvasRef} className="eq-topo" width={400} height={50} />;
 }
 
 // ============================================================================
@@ -186,19 +168,50 @@ export default function App() {
   const sourceRef = useRef(null);
   const analyserRef = useRef(null);
 
-  const mood = useMemo(() => metrics ? deriveMoodFromMetrics(metrics) : "", [metrics]);
-  const textura = useMemo(() => metrics ? deriveTextureFromMetrics(metrics) : "", [metrics]);
+  const mood = useMemo(() => {
+    if(!metrics) return "";
+    if (metrics.lum < 0.36) return "nostálgica";
+    if (metrics.lum > 0.68) return "luminosa";
+    if (metrics.sat < 0.22) return "suspendida";
+    return "íntima";
+  }, [metrics]);
+
+  const textura = useMemo(() => {
+    if(!metrics) return "";
+    if (metrics.sat < 0.22 && metrics.lum < 0.42) return "Velada";
+    if (metrics.warm > 0.12 && metrics.sat >= 0.35) return "Cálida";
+    if (metrics.warm < -0.1 && metrics.sat >= 0.35) return "Fría";
+    if (metrics.paletteVar > 0.06) return "Prismática";
+    return "Haze";
+  }, [metrics]);
+
   const bpm = useMemo(() => metrics ? Math.round(lerp(72, 105, metrics.sat)) : 0, [metrics]);
-  const atmo = useMemo(() => mood ? pick(POOLS_ATMOS[mood]) : "", [mood]);
+  const atmo = useMemo(() => {
+    const pools = {
+      íntima: ["Algo que vuelve sin avisar.", "Un sitio donde el mundo baja el volumen.", "Cerca, como si no hiciera falta decir nada."],
+      nostálgica: ["Un eco que se resiste a desaparecer.", "Lo que queda cuando el tiempo se detiene.", "Un brillo viejo en la esquina de la memoria."],
+      suspendida: ["Un instante congelado en el aire.", "La quietud que precede al recuerdo.", "Todo flota un segundo antes de caer."],
+      luminosa: ["La claridad que baña los momentos compartidos.", "Un rayo de sol atrapado en la memoria.", "La luz como una promesa pequeña."],
+    };
+    return mood ? pick(pools[mood]) : "";
+  }, [mood]);
 
   const handleUpload = async (file) => {
     if (!file) return;
     setImageUrl(URL.createObjectURL(file)); setStage("loading");
     const { colors: c } = await extractColors(file);
-    const m = deriveColorMetrics(c);
+    const m = { ...deriveColorMetrics(c), colors: c };
     const buffer = await generateMusic(m);
     setColors(c); setMetrics(m); setAudioBuffer(buffer); setStage("experience");
   };
+
+  function deriveColorMetrics(colors) {
+    const rgbs = colors.map(hexToRgb01);
+    const luminances = rgbs.map(({ r, g, b }) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
+    const warmnesses = rgbs.map(({ r, b }) => r - b);
+    const sats = rgbs.map((rgb) => rgbToHsv(rgb).s);
+    return { lum: mean(luminances), sat: mean(sats), warm: mean(warmnesses), paletteVar: variance(luminances) };
+  }
 
   const togglePlay = () => {
     if (!audioBuffer) return;
@@ -215,36 +228,6 @@ export default function App() {
     }
   };
 
-  function deriveMoodFromMetrics(m) {
-    if (m.lum < 0.36) return "nostálgica";
-    if (m.lum > 0.68) return "luminosa";
-    if (m.sat < 0.22) return "suspendida";
-    return "íntima";
-  }
-
-  function deriveTextureFromMetrics(m) {
-    if (m.sat < 0.22 && m.lum < 0.42) return "Velada";
-    if (m.warm > 0.12 && m.sat >= 0.35) return "Cálida";
-    if (m.warm < -0.1 && m.sat >= 0.35) return "Fría";
-    if (m.paletteVar > 0.06) return "Prismática";
-    return "Haze";
-  }
-
-  function deriveColorMetrics(colors = []) {
-    const cols = (colors.length ? colors : ["#808080"]).slice(0, 6);
-    const rgbs = cols.map(hexToRgb01);
-    const luminances = rgbs.map(({ r, g, b }) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
-    const sats = rgbs.map((rgb) => rgbToHsv(rgb).s);
-    return { lum: mean(luminances), sat: mean(sats), paletteVar: variance(luminances), colors: cols };
-  }
-
-  const POOLS_ATMOS = {
-    íntima: ["Algo que vuelve sin avisar.", "Un sitio donde el mundo baja el volumen.", "Cerca, como si no hiciera falta decir nada."],
-    nostálgica: ["Un eco que se resiste a desaparecer.", "Lo que queda cuando el tiempo se detiene.", "Un brillo viejo en la esquina de la memoria."],
-    suspendida: ["Un instante congelado en el aire.", "La quietud que precede al recuerdo.", "Todo flota un segundo antes de caer."],
-    luminosa: ["La claridad que baña los momentos compartidos.", "Un rayo de sol atrapado en la memoria.", "La luz como una promesa pequeña."],
-  };
-
   return (
     <div className="app">
       <SplineBackground />
@@ -253,7 +236,7 @@ export default function App() {
           <div className="hero-stage">
             <h1 className="main-title">Synesthesia</h1>
             <p className="hero-subtitle">Donde cada imagen tiene su propia música</p>
-            <div style={{ height: "3.5rem" }} />
+            <div className="home-spacer" />
             <input type="file" id="u" accept="image/*" onChange={e => handleUpload(e.target.files[0])} style={{ display: "none" }} />
             <label htmlFor="u" className="upload-trigger"><Upload size={20} /><span>Entrega una memoria</span></label>
             <div className="upload-specs">JPG · PNG · WEBP | Máximo 10MB</div>
@@ -290,7 +273,7 @@ export default function App() {
                    const a = document.createElement("a"); a.href = URL.createObjectURL(audioBufferToWavBlob(audioBuffer)); a.download = "syn.wav"; a.click();
                    setToast("Descargando..."); setTimeout(() => setToast(""), 2000);
                 }} className="ghost-btn"><Download size={24} /></button>
-                <button onClick={() => setStage("hero")} className="ghost-btn"><RefreshCw size={24} /></button>
+                <button onClick={() => { if(sourceRef.current) sourceRef.current.stop(); setStage("hero"); }} className="ghost-btn"><RefreshCw size={24} /></button>
               </div>
             </div>
           </div>
@@ -303,20 +286,17 @@ export default function App() {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { background: var(--pitch); color: var(--ivory); font-family: 'Inter', sans-serif; height: 100%; width: 100%; overflow: hidden; }
         
-        /* SOLUCIÓN IPHONE SCROLL: Contenedor principal con scroll interno */
         .app { height: 100%; width: 100%; position: relative; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-        
-        /* SPLINE INTERACTIVO: z-index bajo pero pointer-events auto en el contenedor */
         .spline-viewport { position: fixed; inset: 0; z-index: 1; pointer-events: auto; }
         spline-viewer { width: 100%; height: 100%; }
         
-        /* UI OVERLAY: z-index alto pero pointer-events none para no bloquear Spline */
         .ui-overlay { position: relative; z-index: 10; min-height: 100%; width: 100%; display: flex; align-items: center; justify-content: center; padding: 2rem; pointer-events: none; }
         .ui-overlay > * { pointer-events: auto; }
 
         .hero-stage { text-align: center; max-width: 800px; display: flex; flex-direction: column; align-items: center; }
         .main-title { font-family: 'Cormorant Garamond', serif; font-size: clamp(4rem, 12vw, 9rem); font-style: italic; line-height: 1; }
         .hero-subtitle { opacity: 0.8; font-size: 1.1rem; margin-top: 1rem; }
+        .home-spacer { height: 3.5rem; }
         .upload-trigger { display: inline-flex; align-items: center; gap: 12px; padding: 1.2rem 2.5rem; border: 1px solid rgba(251,248,238,0.3); cursor: pointer; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.1em; transition: 0.3s; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); }
         .upload-trigger:hover { background: var(--ivory); color: var(--pitch); }
         .upload-specs { margin-top: 1.8rem; font-size: 0.65rem; opacity: 0.5; letter-spacing: 0.1em; }
@@ -325,36 +305,37 @@ export default function App() {
         .image-frame { position: relative; width: 100%; height: 50vh; box-shadow: 0 40px 100px rgba(0,0,0,0.7); overflow: hidden; }
         .image-frame img { width: 100%; height: 100%; object-fit: cover; }
         .curtain { position: absolute; inset: 0; background: rgba(5,5,5,0.7); display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 1.5rem; }
+        
         .panel { display: flex; flex-direction: column; gap: 1.5rem; }
         .small-cap { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.25em; opacity: 0.6; margin-bottom: 4px; display: block; }
         .main-mood { font-family: 'Cormorant Garamond', serif; font-size: clamp(3rem, 6vw, 5rem); font-style: italic; line-height: 0.9; }
         .quote { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 1.6rem; line-height: 1.3; border-left: 1px solid rgba(251,248,238,0.2); padding-left: 1.5rem; }
         .eq-topo { width: 100%; border-bottom: 1px solid rgba(251,248,238,0.1); height: 60px; }
+        
         .details-row { display: flex; gap: 3.5rem; align-items: flex-start; }
         .val { font-family: 'Cormorant Garamond', serif; font-size: 2.2rem; font-style: italic; line-height: 1; }
         .palette-dots { display: flex; gap: 12px; padding-top: 10px; }
         .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(251,248,238,0.2); }
+        
         .controls { display: flex; align-items: center; gap: 2rem; margin-top: 1rem; }
         .main-btn { width: 90px; height: 90px; border-radius: 50%; border: 1px solid var(--ivory); background: transparent; color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
         .main-btn:hover { background: var(--ivory); color: var(--pitch); transform: scale(1.05); }
         .ghost-btn { width: 68px; height: 68px; border-radius: 50%; border: 1px solid rgba(251,248,238,0.2); background: rgba(255,255,255,0.05); color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px); transition: 0.3s; }
         .ghost-btn:hover { border-color: var(--ivory); }
+        
         .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #000; padding: 12px 24px; border: 1px solid var(--ivory); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; z-index: 1000; }
         .spinner { width: 40px; height: 40px; border: 3px solid rgba(251,248,238,0.1); border-top-color: var(--ivory); border-radius: 50%; animation: s 1s linear infinite; margin: 0 auto; }
         @keyframes s { to { transform: rotate(360deg); } }
 
-        /* DISEÑO MÓVIL ULTRA COMPACTO */
         @media (max-width: 900px) {
           .ui-overlay { padding: 1rem; align-items: flex-start; justify-content: flex-start; }
-          .hero-stage { justify-content: center; height: 100%; padding-top: 15vh; }
-          .experience-grid { grid-template-columns: 1fr; gap: 1.5rem; text-align: center; }
-          .image-frame { height: 18vh; width: 80%; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-          .panel { align-items: center; gap: 1rem; }
+          .hero-stage { justify-content: center; height: 100%; padding-top: 12vh; }
+          .experience-grid { grid-template-columns: 1fr; gap: 1rem; text-align: center; }
+          .image-frame { height: 18vh; width: 75%; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+          .panel { align-items: center; gap: 0.8rem; }
           .quote { border-left: none; border-top: 1px solid rgba(251,248,238,0.1); padding: 1rem 0 0; font-size: 1.3rem; }
           .details-row { gap: 2rem; justify-content: center; width: 100%; }
           .controls { gap: 1.5rem; justify-content: center; padding-bottom: 2rem; }
-          .main-btn { width: 80px; height: 80px; }
-          .ghost-btn { width: 64px; height: 64px; }
           .main-mood { font-size: 2.8rem; }
           .val { font-size: 1.8rem; }
         }
