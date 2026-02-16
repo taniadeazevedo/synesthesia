@@ -1128,6 +1128,12 @@ export default function App() {
   display: block !important;
 }
 
+/* Esto controla directamente el tamaño de los valores numéricos y nombres de textura */
+.detail-item .mood-name {
+  font-size: 2.1rem !important; /* Baja este número (ej: 1.8rem) si lo quieres aún más pequeño */
+  margin: 0 !important;
+}
+
 /* El texto que aparece debajo del botón de la Home */
 .upload-specs {
   margin-top: 20px;
