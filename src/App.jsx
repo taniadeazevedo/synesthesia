@@ -857,13 +857,6 @@ export default function App() {
       <div className="mood-name">{mood}</div>
       <div className="quote">{atmo}</div>
 
-Gemini said
-Para que el título de "Frecuencias" tenga el mismo estilo visual coherente que "Tempo" y "Textura", y para solucionar los problemas de tamaño y centrado en móvil de una vez por todas, debes realizar estos ajustes quirúrgicos en tu código:
-
-1. El cambio en el HTML (JSX)
-Busca la sección donde aparece el ecualizador. Vamos a cambiar la etiqueta de "Frecuencias" para que use la clase .small-cap y vamos a reducir el tamaño de los números directamente en las etiquetas de React (que es lo que te estaba bloqueando el cambio).
-
-Busca y reemplaza estas partes exactas:
 
 JavaScript
 {/* 1. Cambia la etiqueta de Frecuencias */}
