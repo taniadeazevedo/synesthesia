@@ -31,9 +31,6 @@ function variance(arr) {
   return mean(arr.map((x) => (x - m) ** 2));
 }
 
-// ============================================================================
-// COLOR EXTRACTION (KMEANS)
-// ============================================================================
 function kMeansClustering(pixels, k = 5, maxIterations = 10) {
   if (pixels.length === 0) return [];
   let centroids = [];
@@ -80,9 +77,6 @@ async function extractColors(imageFile) {
   });
 }
 
-// ============================================================================
-// METRICS & PROFILE
-// ============================================================================
 function deriveColorMetrics(colors = []) {
   const cols = (colors.length ? colors : ["#808080"]).slice(0, 6);
   const rgbs = cols.map(hexToRgb01);
@@ -123,7 +117,7 @@ const POOLS_ATMOS = {
 };
 
 // ============================================================================
-// AUDIO ENGINE (FULL VERSION)
+// AUDIO ENGINE 
 // ============================================================================
 async function generateMusic(metrics) {
   const duration = 72, sampleRate = 44100;
@@ -132,12 +126,10 @@ async function generateMusic(metrics) {
   const m = {
     bpm: Math.round(lerp(72, 110, metrics.sat)),
     cutoff: lerp(800, 4000, metrics.lum),
-    reverb: lerp(1.5, 4, metrics.paletteVar * 5),
     detune: lerp(5, 25, metrics.paletteVar * 10)
   };
   const beat = 60 / m.bpm;
 
-  // Master Bus
   const master = ctx.createGain();
   master.gain.value = 0.8;
   const busFilter = ctx.createBiquadFilter();
@@ -146,7 +138,6 @@ async function generateMusic(metrics) {
   busFilter.connect(master);
   master.connect(ctx.destination);
 
-  // Pad Synth
   const padBus = ctx.createGain();
   padBus.gain.setValueAtTime(0, 0);
   padBus.gain.linearRampToValueAtTime(0.4, 5);
@@ -165,7 +156,6 @@ async function generateMusic(metrics) {
     osc.stop(duration);
   });
 
-  // Percussion
   for (let t = 0; t < duration; t += beat) {
     const kick = ctx.createOscillator();
     const kg = ctx.createGain();
@@ -206,6 +196,13 @@ function audioBufferToWavBlob(audioBuffer) {
 function SplineBackground() {
   const [shouldLoad, setShouldLoad] = useState(false);
   useEffect(() => { const t = setTimeout(() => setShouldLoad(true), 100); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    if (!shouldLoad) return;
+    if (!document.querySelector('script[src*="spline-viewer"]')) {
+      const s = document.createElement("script"); s.type = "module";
+      s.src = "https://unpkg.com/@splinetool/viewer@1.12.53/build/spline-viewer.js"; document.head.appendChild(s);
+    }
+  }, [shouldLoad]);
   return (
     <div className="spline-viewport">
       {shouldLoad && <spline-viewer url="https://prod.spline.design/6wFT9lzZuaWY69mT/scene.splinecode" />}
@@ -287,7 +284,7 @@ export default function App() {
           <div className="hero-stage">
             <h1 className="main-title">Synesthesia</h1>
             <p className="hero-subtitle">Donde cada imagen tiene su propia música</p>
-            <div style={{ height: "40px" }} />
+            <div style={{ height: "3rem" }} />
             <input type="file" id="u" accept="image/*" onChange={e => handleUpload(e.target.files[0])} style={{ display: "none" }} />
             <label htmlFor="u" className="upload-trigger"><Upload size={20} /><span>Entrega una memoria</span></label>
             <div className="upload-specs">JPG · PNG · WEBP | Máximo 10MB</div>
@@ -332,20 +329,29 @@ export default function App() {
       </div>
       {toast && <div className="toast">{toast}</div>}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,500&family=Inter:wght@300;400&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,500&family=Inter:wght@300;400;500&display=swap');
         :root { --pitch: #050505; --ivory: #fbf8ee; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: var(--pitch); color: var(--ivory); font-family: 'Inter', sans-serif; overflow-x: hidden; }
-        .app { min-height: 100vh; position: relative; }
-        .spline-viewport { position: fixed; inset: 0; z-index: 0; }
-        .ui-overlay { position: relative; z-index: 10; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; pointer-events: none; }
+        html, body { background: var(--pitch); color: var(--ivory); font-family: 'Inter', sans-serif; overflow: hidden; width: 100%; height: 100%; }
+        
+        .app { width: 100%; height: 100dvh; position: relative; }
+        .spline-viewport { position: fixed; inset: 0; z-index: 0; pointer-events: none; width: 100%; height: 100%; }
+        spline-viewer { width: 100%; height: 100%; }
+        
+        .ui-overlay { 
+          position: relative; z-index: 10; height: 100dvh; width: 100%;
+          display: flex; align-items: center; justify-content: center; padding: 2rem;
+          pointer-events: none;
+        }
         .ui-overlay > * { pointer-events: auto; }
-        .hero-stage { text-align: center; max-width: 800px; }
+
+        .hero-stage { text-align: center; max-width: 800px; display: flex; flex-direction: column; align-items: center; }
         .main-title { font-family: 'Cormorant Garamond', serif; font-size: clamp(4rem, 12vw, 9rem); font-style: italic; line-height: 1; }
         .hero-subtitle { opacity: 0.8; font-size: 1.1rem; margin-top: 1rem; }
-        .upload-trigger { display: inline-flex; align-items: center; gap: 12px; padding: 1.2rem 2.5rem; border: 1px solid rgba(251,248,238,0.3); cursor: pointer; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.1em; transition: 0.3s; }
+        .upload-trigger { display: inline-flex; align-items: center; gap: 12px; padding: 1.2rem 2.5rem; border: 1px solid rgba(251,248,238,0.3); cursor: pointer; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.1em; transition: 0.3s; background: rgba(0,0,0,0.2); backdrop-filter: blur(5px); }
         .upload-trigger:hover { background: var(--ivory); color: var(--pitch); }
-        .upload-specs { margin-top: 15px; font-size: 0.65rem; opacity: 0.5; letter-spacing: 0.1em; }
+        .upload-specs { margin-top: 1.5rem; font-size: 0.65rem; opacity: 0.5; letter-spacing: 0.1em; }
+
         .experience-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 4rem; width: 100%; max-width: 1200px; align-items: center; }
         .image-frame { position: relative; width: 100%; height: 50vh; box-shadow: 0 40px 100px rgba(0,0,0,0.7); }
         .image-frame img { width: 100%; height: 100%; object-fit: cover; }
@@ -363,15 +369,15 @@ export default function App() {
         .main-btn { width: 90px; height: 90px; border-radius: 50%; border: 1px solid var(--ivory); background: transparent; color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.3s; }
         .main-btn:hover { background: var(--ivory); color: var(--pitch); transform: scale(1.05); }
         .ghost-btn { width: 65px; height: 65px; border-radius: 50%; border: 1px solid rgba(251,248,238,0.2); background: rgba(255,255,255,0.05); color: var(--ivory); cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px); transition: 0.3s; }
-        .ghost-btn:hover { border-color: var(--ivory); }
         .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #000; padding: 12px 24px; border: 1px solid var(--ivory); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; z-index: 1000; }
         .spinner { width: 40px; height: 40px; border: 3px solid rgba(251,248,238,0.1); border-top-color: var(--ivory); border-radius: 50%; animation: s 1s linear infinite; margin: 0 auto; }
         @keyframes s { to { transform: rotate(360deg); } }
 
         @media (max-width: 900px) {
-          .ui-overlay { padding: 1rem; align-items: flex-start; }
-          .experience-grid { grid-template-columns: 1fr; gap: 1.5rem; text-align: center; }
-          .image-frame { height: 30vh; margin-top: -1rem; }
+          .ui-overlay { padding: 1.5rem; align-items: center; overflow-y: auto; }
+          .hero-stage { padding-top: 0; }
+          .experience-grid { grid-template-columns: 1fr; gap: 2rem; text-align: center; }
+          .image-frame { height: 28vh; margin-top: 0; }
           .panel { align-items: center; }
           .quote { border-left: none; border-top: 1px solid rgba(251,248,238,0.1); padding: 1.5rem 0 0; font-size: 1.3rem; }
           .details-row { gap: 2rem; justify-content: center; width: 100%; }
