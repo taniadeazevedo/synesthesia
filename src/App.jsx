@@ -858,7 +858,6 @@ export default function App() {
       <div className="quote">{atmo}</div>
 
 
-JavaScript
 {/* 1. Cambia la etiqueta de Frecuencias */}
 {/* --- SECCIÓN DE FRECUENCIAS --- */}
 <div className="eq-wrapper">
